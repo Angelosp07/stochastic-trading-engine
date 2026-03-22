@@ -160,16 +160,9 @@ Supports folders for Users, Orders, and Prices.
 
 - Orders automatically **reserve funds/assets**.
 - Cancelled orders release reservations.
-- The backend is **demo-ready**, can be extended with:
+- The backend is **about-demo-ready**, can be extended with:
   - Matching engine with partial fills
   - Multiple assets
   - Authentication / JWT
   - Frontend integration
-
----
-
-## 👨‍💻 Author
-
-Demo project by [Your Name].  
-Designed as a learning project for stochastic price simulation, trading mechanics, and backend architecture.
 
