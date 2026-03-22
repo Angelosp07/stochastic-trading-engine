@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h2>Live Price</h2>
+<div id="price">Connecting...</div>
+
+<script>
+const ws = new WebSocket("ws://localhost:8000/ws/price");
+
+ws.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    document.getElementById("price").innerText = data.price;
+};
+</script>
+
+</body>
+</html>

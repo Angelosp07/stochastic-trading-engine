@@ -1,0 +1,133 @@
+{
+  "info": {
+    "name": "Trading Backend Full API",
+    "_postman_id": "a1b2c3d4-e5f6-7890-1234-abcdef123456",
+    "description": "Postman collection for users, orders, price, and history",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Users",
+      "description": "User management endpoints",
+      "item": [
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"alice\",\n  \"balance\": 1000\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/users",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["users"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "description": "Place or cancel orders",
+      "item": [
+        {
+          "name": "Place Buy Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"side\": \"bid\",\n  \"price\": 100,\n  \"quantity\": 10,\n  \"user_id\": 1\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/order",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["order"]
+            }
+          }
+        },
+        {
+          "name": "Place Sell Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"side\": \"ask\",\n  \"price\": 105,\n  \"quantity\": 5,\n  \"user_id\": 1\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/order",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["order"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Order",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8000/order/cancel/1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["order","cancel","1"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Prices",
+      "description": "Price endpoints",
+      "item": [
+        {
+          "name": "Get Current Price",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8000/price",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["price"]
+            }
+          }
+        },
+        {
+          "name": "Get Price History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8000/history?n=50",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["history"],
+              "query": [
+                { "key": "n", "value": "50" }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

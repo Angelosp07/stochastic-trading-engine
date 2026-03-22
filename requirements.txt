@@ -1,0 +1,9 @@
+# Core numerical libraries
+numpy==2.4.3
+
+# Redis client
+redis==7.3.0
+
+# Web API / WebSockets:
+fastapi==0.135.1
+uvicorn[standard]==0.42.0

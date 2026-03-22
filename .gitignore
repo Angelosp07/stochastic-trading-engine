@@ -1,0 +1,43 @@
+# Byte-compiled / Python files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# SQLite database files
+*.db
+*.sqlite3
+storage/*.db
+
+# Redis dump files
+dump.rdb
+*.rdb
+
+# Logs
+*.log
+
+# VS Code / JetBrains IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# MacOS
+.DS_Store
+
+# Postman collection environments
+*.postman_environment.json
+
+# Coverage / testing
+htmlcov/
+.coverage
+.tox/
+.pytest_cache/
+
+# Docker
+docker-compose.override.yml
