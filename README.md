@@ -1,33 +1,30 @@
 # Stochastic Trading Backend
 
-A demo trading platform backend that simulates asset prices using stochastic processes (Brownian motion and birth-death processes). Supports user management, order placement/cancellation, order book, and price streaming through REST API and WebSocket.
+A demo trading platform backend that simulates asset prices using stochastic processes (Brownian motion and birth-death processes). It supports user management, order placement and cancellation, an order book, and price streaming via REST API and WebSocket.
 
-This project is intended as a **working demo** and can be extended to a full trading platform.
+This project is intended as a **Fintech hackathon demo**. For simplicity and due to the short timeframe, trades occur against random walks rather than reflecting real demand and supply dynamics.
 
 ---
 
 ## Features
 
 - **Price simulation engine**
-  - Composed of:
-    - Brownian motion (general noise)
-    - Birth-death process (market events)
+  - Brownian motion (general market noise)
+  - Birth-death process (discrete market events)
 - **User management**
-  - Create users with balances
-  - Track asset holdings
+  - Create users with starting balances
+  - Track asset holdings and positions
 - **Order management**
-  - Place buy/sell orders
-  - Cancel orders and release reserved funds/assets
-  - Redis-based order book
+  - Place buy and sell orders
+  - Cancel orders and refund reserved funds or restore assets
 - **Trade execution**
-  - Matching engine for buy/sell orders
-  - Automatic fund/asset updates
+  - Matching engine for buy and sell orders
+  - Automatic updates to user balances and asset holdings
 - **API**
-  - REST endpoints for users, orders, price, and history
+  - REST endpoints for users, orders, prices, and price history
   - WebSocket for live price streaming
-- **Persistent storage**
-  - SQLite for users, orders, positions, price history
-  - Redis for live order book
+- **Storage**
+  - SQLite database for users, orders, positions, and price history
 
 ---
 
@@ -36,13 +33,14 @@ This project is intended as a **working demo** and can be extended to a full tra
 ```
 stochastic-trading-engine/               
 ├── app/
-│   ├── api/routes/         # FastAPI endpoints
-│   │   ├── history.py
-│   │   ├── orders.py
-│   │   ├── price.py
-│   │   └── user.py
-│   └── websocket.py        # WebSocket handler
-│
+│   ├── api/             # API routes
+│   │   ├── routes/
+│   │   │   ├── positions.py
+│   │   │   ├── orders.py
+│   │   │   ├── price.py
+│   │   │   └── user.py
+│   │   └──  websocket.py        
+│   │
 │   ├── engine/             # Price simulation engine
 │   │   ├── processes/
 │   │   │   ├── birth_death.py
@@ -55,7 +53,7 @@ stochastic-trading-engine/
 │   │   ├── db.py
 │   │   ├── position_repository.py
 │   │   ├── price_repository.py
-│   │   ├── redis_client.py
+│   │   ├── order_repository.py
 │   │   └── user_repository.py
 │   │
 │   ├── config.py
@@ -64,6 +62,9 @@ stochastic-trading-engine/
 │
 ├── storage/               
 ├── test/
+│   ├── db_tests/            
+│   │   ├── price_test.py
+│   │   └── user_test.py
 │   └── test_ws.html
 ├── docker-compose.yml
 ├── Dockerfile
@@ -75,35 +76,17 @@ stochastic-trading-engine/
 
 ---
 
-## ⚡ Requirements
+## 🚀 Docker Set Up
 
-```text
-fastapi==0.135.1
-uvicorn[standard]==0.42.0
-redis==5.3.0
-```
-
----
-
-## 🚀 Running the Backend
-
-### 1. Install dependencies
 
 ```bash
-pip install -r requirements.txt
+# Build image
+docker build -t price-sim .
+
+# Run container
+docker run -p 8000:8000 price-sim
 ```
 
-### 2. Start Redis
-
-```bash
-docker run --name trading-redis -p 6379:6379 -d redis
-```
-
-### 3. Run FastAPI server
-
-```bash
-uvicorn app.main:app --reload
-```
 
 Server will run at: `http://localhost:8000`
 
@@ -114,55 +97,57 @@ Server will run at: `http://localhost:8000`
 ### Users
 | Method | Endpoint | Body | Description |
 |--------|----------|------|-------------|
-| POST   | `/users` | `{ "username": str, "balance": float }` | Create a new user |
+| POST   | `/users/` | `{ "username": str, "balance": float }` | Create a new user with initial balance |
+| GET    | `/users/{user_id}` | None | Retrieve user information including balance |
+| POST   | `/users/{user_id}/balance/update` | `{ "delta_balance": float }` | Increment or decrement user balance |
+| POST   | `/users/{user_id}/balance/set` | `{ "balance": float }` | Set user balance directly |
 
 ### Orders
 | Method | Endpoint | Body | Description |
 |--------|----------|------|-------------|
-| POST   | `/order` | `{ "side": "bid"/"ask", "price": float, "quantity": float, "user_id": int }` | Place buy/sell order |
-| POST   | `/order/cancel/{order_id}` | None | Cancel order and release funds/assets |
+| POST   | `/orders/` | `{ "user_id": int, "asset_id": int, "side": "bid"/"ask", "price": float, "quantity": float }` | Place a buy or sell order |
+| GET    | `/orders/{order_id}` | None | Get details of a specific order |
+| GET    | `/orders/side/bid` | None | Get all open buy orders |
+| GET    | `/orders/side/ask` | None | Get all open sell orders |
+| POST   | `/orders/{order_id}/cancel` | None | Cancel an open order and refund funds or restore assets |
 
 ### Prices
 | Method | Endpoint | Query | Description |
 |--------|----------|-------|-------------|
-| GET    | `/price` | None | Get current simulated price |
-| GET    | `/history` | `n=50` | Get last `n` price points |
+| GET    | `/prices/last/{asset_id}` | `n=int` | Get last `n` price points for an asset |
+| GET    | `/prices/all/{asset_id}` | None | Get all historical prices for an asset |
+
+### Positions
+| Method | Endpoint | Query | Description |
+|--------|----------|-------|-------------|
+| GET    | `/positions` | `user_id=int&asset_id=int` | Get a specific asset quantity for a user |
+| GET    | `/positions/user/{user_id}` | None | Get all positions for a user |
 
 ### WebSocket
 | Endpoint | Description |
 |----------|-------------|
-| `/ws/price` | Streams live prices every 0.1s |
-
+| `/ws/price` | Stream live prices for one or multiple assets at a configurable interval |
 ---
 
 ## 💾 Database
 
-### SQLite
-- `users` → `id`, `username`, `balance`
-- `positions` → `user_id`, `quantity`
-- `orders` → `id`, `user_id`, `side`, `price`, `quantity`, `status`
-- `price_history` → timestamped price data
-
-### Redis
-- `order_book:bid` → list of bid orders
-- `order_book:ask` → list of ask orders
+### SQLite Tables
+- `users` → `id`, `username`, `balance`, `created_at`  
+- `positions` → `user_id`, `asset_id`, `quantity`  
+- `orders` → `id`, `user_id`, `asset_id`, `side`, `price`, `quantity`, `status`, `timestamp`  
+- `price_history` → `id`, `asset_id`, `price`, `timestamp`  
+- `assets` → `id`, `symbol`, `name`
 
 ---
 
 ## 📝 Postman Collection
 
-Import the `Trading Backend Full API` collection (JSON file) into Postman for testing all endpoints.  
-Supports folders for Users, Orders, and Prices.
+Import the `Trading Engine API` collection (JSON file) into Postman for testing all endpoints.  
+
 
 ---
 
 ## 🔧 Notes
 
-- Orders automatically **reserve funds/assets**.
-- Cancelled orders release reservations.
-- The backend is **about-demo-ready**, can be extended with:
-  - Matching engine with partial fills
-  - Multiple assets
-  - Authentication / JWT
-  - Frontend integration
+- The backend is **development** stage
 

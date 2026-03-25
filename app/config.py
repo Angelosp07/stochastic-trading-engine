@@ -1,4 +1,69 @@
 from pathlib import Path
+import sqlite3
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT_DIR / "storage" / "market.db"
+
+
+def seed_assets(conn):
+    assets = [
+        ("AAPL", "Apple Inc.", 180.0, 0.001, 0.01, 0.2, 0.2, 0.02, 0.02),
+        ("GOOGL", "Alphabet Inc.", 140.0, 0.0012, 0.012, 0.25, 0.25, 0.015, 0.015),
+        ("TSLA", "Tesla Inc.", 220.0, 0.002, 0.02, 0.3, 0.3, 0.03, 0.03),
+    ]
+
+    conn.executemany("""
+        INSERT OR IGNORE INTO assets (symbol, name)
+        VALUES (?, ?)
+    """, [(a[0], a[1]) for a in assets])
+
+    conn.commit()
+
+    return {a[0]: {
+        "initial_price": a[2],
+        "mu": a[3],
+        "sigma": a[4],
+        "lambda_birth": a[5],
+        "lambda_death": a[6],
+        "jump_up": a[7],
+        "jump_down": a[8],
+    } for a in assets}
+
+
+def seed_users(conn):
+    """
+    Seed demo users into the database.
+
+    Returns a dictionary mapping username -> initial info.
+    """
+    users = [
+        ("Martin", 1000000.0),
+        ("Sara", 1000000.0),
+        ("Alice", 500000.0),
+        ("Bob", 750000.0)
+    ]
+
+    # Insert users into the DB
+    conn.executemany("""
+                     INSERT
+                     OR IGNORE INTO users (username, balance)
+        VALUES (?, ?)
+                     """, users)
+
+    conn.commit()
+
+    # Return dictionary of initial values
+    return {u[0]: {"balance": u[1]} for u in users}
+
+def clear_tables(db_path: str = "app.db"):
+    """
+    Delete all rows from demo tables for a clean start.
+    """
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    tables = ["orders", "price_history", "positions", "assets", "users"]  # add any other demo tables
+    for table in tables:
+        cursor.execute(f"DELETE FROM {table};")
+        cursor.execute(f"DELETE FROM sqlite_sequence WHERE name='{table}';")  # reset AUTOINCREMENT
+    conn.commit()
+    conn.close()

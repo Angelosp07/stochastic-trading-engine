@@ -1,34 +1,51 @@
 import numpy as np
-from app.storage.redis_client import net_demand, print_order_book
 
 class PriceEngine:
-    def __init__(self, initial_price, brownian, birth_death, jump, impact_coeff=0.001):
-        self.price = initial_price
+    """
+    Simplified price engine using only stochastic processes:
+      1) Continuous diffusion (Brownian)
+      2) Discrete jumps (Birth-Death process)
+
+    Parameters
+    ----------
+    initial_price : float
+        Starting price.
+    brownian : object
+        Must expose step(dt: float) -> float (log-return increment).
+    birth_death : object
+        Must expose step(dt: float) -> event (domain-specific).
+    jump : object
+        Must expose apply(price: float, event) -> float (applies the discrete jump).
+    debug : bool
+        If True, prints debug lines.
+    """
+    def __init__(
+        self,
+        initial_price: float,
+        brownian,
+        birth_death,
+        jump,
+        debug: bool = True,
+    ):
+        self.price = float(initial_price)
         self.brownian = brownian
         self.birth_death = birth_death
         self.jump = jump
-        self.impact_coeff = impact_coeff
+        self.debug = debug
 
     def step(self, dt: float) -> float:
-        # 1. Continuous evolution
+        # 1) Continuous diffusion (geometric via log-normal increment)
         diffusion = self.brownian.step(dt)
-        new_price = self.price * np.exp(diffusion)
+        new_price = self.price * float(np.exp(diffusion))
 
-        # 2. Discrete jump (BDP)
+        # 2) Discrete jump via birth-death event
         event = self.birth_death.step(dt)
         new_price = self.jump.apply(new_price, event)
 
-        # 3. Market impact from order book
-        demand = net_demand() / 100  # normalize
-        impact = self.impact_coeff * demand
-        new_price *= 1 + impact
-
         # Debug prints
-        print(f"[DEBUG] Price before impact: {self.price:.4f}, diffusion: {diffusion:.5f}, event: {event}")
-        print(f"[DEBUG] Net demand: {demand*100:.0f}, Market impact factor: {impact:.5f}")
-        print_order_book()
-        print("-" * 50)
+        if self.debug:
+            print(f"[DEBUG] Price: {self.price:.4f}, diffusion: {diffusion:.5f}, event: {event}")
 
-        # update price
-        self.price = max(new_price, 0.01)
+        # Update price (floor at a small epsilon to avoid zero/negative)
+        self.price = max(float(new_price), 0.01)
         return self.price

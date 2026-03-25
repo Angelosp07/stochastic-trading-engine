@@ -1,17 +1,211 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Live Prices — Multi-Commodity</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#0f1220; --card:#16192a; --text:#e6e8f2; --muted:#9aa3b2; --up:#14c38e; --down:#ff6b6b; --warn:#ffb020; --accent:#6aa1ff; }
+    body { background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, Arial; margin:0; padding:24px; }
+    h2 { margin:0 0 12px 0; font-weight:700; }
+    .muted { color:var(--muted); }
+    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap:12px; margin-top:12px; }
+    .card { background:var(--card); border-radius:10px; padding:14px 16px; box-shadow:0 4px 10px rgba(0,0,0,0.25); display:flex; flex-direction:column; gap:6px; }
+    .row { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+    .sym { font-weight:700; letter-spacing:0.5px; color:var(--accent); }
+    .price { font-size:1.25rem; font-variant-numeric: tabular-nums; }
+    .delta.up { color:var(--up); }
+    .delta.down { color:var(--down); }
+    .status { font-size:0.9rem; }
+    .ts { font-size:0.8rem; color:var(--muted); }
+    .error { color:var(--down); min-height: 1.2em; }
+    .warn { color:var(--warn); }
+    footer { margin-top:18px; font-size:0.9rem; color:var(--muted); }
+    code { color:var(--accent); }
+  </style>
+</head>
 <body>
-<h2>Live Price</h2>
-<div id="price">Connecting...</div>
+  <h2>Live Prices <span class="muted">(WebSocket)</span></h2>
+  <div class="muted">Override with <code>?server=localhost:8000&amp;symbols=AAPL,GOOGL,TSLA</code></div>
+  <div id="cards" class="grid"></div>
+  <footer>
+    Endpoint: <code>/ws/price?symbol=&lt;SYMBOL&gt;</code> (single symbol) or <code>/ws/price</code> (all symbols in one array).
+  </footer>
 
-<script>
-const ws = new WebSocket("ws://localhost:8000/ws/price");
+  <script>
+    // ---------------- Configuration ----------------
+    const params = new URLSearchParams(window.location.search);
+    const DEFAULT_SERVER = 'localhost:8000';
+    const SYMBOLS = (params.get('symbols') || 'AAPL,GOOGL,TSLA')
+      .split(',').map(s => s.trim()).filter(Boolean);
 
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    document.getElementById("price").innerText = data.price;
-};
-</script>
+    const pageProtocol = (location.protocol || '').toLowerCase();
+    const secureFlag = params.get('secure') === '1';
+    const SERVER = params.get('server') || location.host || DEFAULT_SERVER;
+    const wsProto = (secureFlag || pageProtocol === 'https:') ? 'wss' : 'ws';
+    const WS_BASE = `${wsProto}://${SERVER}`;
+    const ENDPOINT = (symbol) => symbol
+      ? `${WS_BASE}/ws/price?symbol=${encodeURIComponent(symbol)}`
+      : `${WS_BASE}/ws/price`;
 
+    // -------------- DOM helpers & state --------------
+    const cardsEl = document.getElementById('cards');
+
+    function ensureCard(symbol) {
+      const id = `card-${symbol}`;
+      let card = document.getElementById(id);
+      if (card) return card;
+
+      card = document.createElement('div');
+      card.className = 'card';
+      card.id = id;
+      card.innerHTML = `
+        <div class="row">
+          <div class="sym">${symbol}</div>
+          <div class="status muted" id="status-${symbol}">connecting…</div>
+        </div>
+        <div class="row">
+          <div class="price" id="price-${symbol}" data-prev="">—</div>
+          <div class="delta muted" id="delta-${symbol}"></div>
+        </div>
+        <div class="ts" id="ts-${symbol}"></div>
+        <div class="error" id="err-${symbol}"></div>
+      `;
+      cardsEl.appendChild(card);
+      return card;
+    }
+
+    function setStatus(symbol, text, cls = 'muted') {
+      const el = document.getElementById(`status-${symbol}`);
+      if (el) { el.className = `status ${cls}`; el.textContent = text; }
+    }
+
+    function setError(symbol, text) {
+      const el = document.getElementById(`err-${symbol}`);
+      if (el) { el.textContent = text || ''; }
+    }
+
+    function updatePrice(symbol, nextPrice, ts) {
+      ensureCard(symbol);
+      const priceEl = document.getElementById(`price-${symbol}`);
+      const deltaEl = document.getElementById(`delta-${symbol}`);
+      const tsEl = document.getElementById(`ts-${symbol}`);
+
+      const prev = parseFloat(priceEl.dataset.prev || 'NaN');
+      const p = Number(nextPrice);
+      if (!Number.isFinite(p)) return;
+
+      priceEl.textContent = p.toFixed(4);
+      priceEl.dataset.prev = p.toString();
+
+      if (Number.isFinite(prev)) {
+        const diff = p - prev;
+        const pct = prev !== 0 ? (diff / prev) * 100 : 0;
+        deltaEl.textContent = `${diff >= 0 ? '+' : ''}${diff.toFixed(4)} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
+        deltaEl.className = `delta ${diff >= 0 ? 'up' : 'down'}`;
+      } else {
+        deltaEl.textContent = '';
+        deltaEl.className = 'delta muted';
+      }
+
+      tsEl.textContent = ts ? new Date(ts).toLocaleString() : new Date().toLocaleString();
+    }
+
+    // -------------- WebSocket logic ------------------
+    const sockets = {};   // symbol -> WebSocket
+    const backoffs = {};  // symbol -> attempt count
+
+    function connectSymbol(symbol) {
+      // Create card ONCE and reuse it
+      ensureCard(symbol);
+
+      // If an existing socket is open or connecting, don't spawn another
+      const existing = sockets[symbol];
+      if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+      // If an old socket exists, close it before reconnecting
+      if (existing) {
+        try { existing.close(); } catch {}
+      }
+
+      const attempt = (backoffs[symbol] || 0);
+      const url = ENDPOINT(symbol);
+      let ws;
+
+      try {
+        ws = new WebSocket(url);
+      } catch (e) {
+        setStatus(symbol, 'URL error', 'warn');
+        setError(symbol, `Bad URL "${url}": ${e.message}`);
+        return;
+      }
+      sockets[symbol] = ws;
+
+      setStatus(symbol, 'connecting…', 'muted');
+      setError(symbol, '');
+
+      ws.onopen = () => {
+        backoffs[symbol] = 0;
+        setStatus(symbol, 'live', '');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          // Support either single-object payloads or arrays:
+          // 1) { symbol, price, timestamp }
+          // 2) { price, timestamp } when URL already specifies ?symbol=...
+          // 3) [ { symbol, price, timestamp }, ... ] when server broadcasts all symbols
+          if (Array.isArray(data)) {
+            data.forEach(item => {
+              const sym = item.symbol || symbol;
+              updatePrice(sym, item.price ?? item.value, item.timestamp || item.time || Date.now());
+            });
+            return;
+          }
+
+          if (data.error) {
+            setStatus(symbol, 'error', 'warn');
+            setError(symbol, data.error);
+            // If server says unknown symbol, stop retrying for this one
+            if (/unknown symbol/i.test(data.error)) {
+              ws.close();
+              return;
+            }
+          } else {
+            const sym = data.symbol || symbol;
+            updatePrice(sym, data.price ?? data.value, data.timestamp || data.time || Date.now());
+          }
+        } catch (e) {
+          setError(symbol, `Parse error: ${e.message}`);
+        }
+      };
+
+      ws.onerror = (evt) => {
+        setStatus(symbol, 'error', 'warn');
+        setError(symbol, 'Socket error (see console).');
+        console.error(`WS error [${symbol}]`, evt);
+      };
+
+      ws.onclose = () => {
+        const prev = backoffs[symbol] || 0;
+        const next = Math.min(prev + 1, 10);
+        backoffs[symbol] = next;
+        setStatus(symbol, 'reconnecting…', 'warn');
+        const delay = Math.min(10000, 500 * Math.pow(2, next));
+        setTimeout(() => connectSymbol(symbol), delay);
+      };
+    }
+
+    // Connect one socket per symbol
+    SYMBOLS.forEach(connectSymbol);
+
+    // Cleanup on unload
+    window.addEventListener('beforeunload', () => {
+      Object.values(sockets).forEach(ws => { try { ws.close(); } catch {} });
+    });
+  </script>
 </body>
 </html>

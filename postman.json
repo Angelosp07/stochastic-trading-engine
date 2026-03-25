@@ -1,14 +1,19 @@
 {
   "info": {
-    "name": "Trading Backend Full API",
-    "_postman_id": "a1b2c3d4-e5f6-7890-1234-abcdef123456",
-    "description": "Postman collection for users, orders, price, and history",
+    "name": "Trading Engine API",
+    "_postman_id": "c1f7c1b2-1234-4567-890a-abcdef123456",
+    "description": "API collection for trading backend",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    }
+  ],
   "item": [
     {
       "name": "Users",
-      "description": "User management endpoints",
       "item": [
         {
           "name": "Create User",
@@ -17,16 +22,45 @@
             "header": [
               { "key": "Content-Type", "value": "application/json" }
             ],
+            "url": "{{base_url}}/users/",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"alice\",\n  \"balance\": 1000\n}"
-            },
-            "url": {
-              "raw": "http://localhost:8000/users",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8000",
-              "path": ["users"]
+              "raw": "{\n  \"username\": \"Martin\",\n  \"balance\": 100000\n}"
+            }
+          }
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/users/1"
+          }
+        },
+        {
+          "name": "Update Balance",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base_url}}/users/1/balance/update",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"delta_balance\": -500\n}"
+            }
+          }
+        },
+        {
+          "name": "Set Balance",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base_url}}/users/1/balance/set",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"balance\": 200000\n}"
             }
           }
         }
@@ -34,97 +68,85 @@
     },
     {
       "name": "Orders",
-      "description": "Place or cancel orders",
       "item": [
         {
-          "name": "Place Buy Order",
+          "name": "Create Order",
           "request": {
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json" }
             ],
+            "url": "{{base_url}}/orders/",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"side\": \"bid\",\n  \"price\": 100,\n  \"quantity\": 10,\n  \"user_id\": 1\n}"
-            },
-            "url": {
-              "raw": "http://localhost:8000/order",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8000",
-              "path": ["order"]
+              "raw": "{\n  \"user_id\": 1,\n  \"asset_id\": 1,\n  \"side\": \"bid\",\n  \"price\": 100,\n  \"quantity\": 10\n}"
             }
           }
         },
         {
-          "name": "Place Sell Order",
+          "name": "Get Order",
           "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"side\": \"ask\",\n  \"price\": 105,\n  \"quantity\": 5,\n  \"user_id\": 1\n}"
-            },
-            "url": {
-              "raw": "http://localhost:8000/order",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8000",
-              "path": ["order"]
-            }
+            "method": "GET",
+            "url": "{{base_url}}/orders/1"
+          }
+        },
+        {
+          "name": "Get Orders By Side (bid)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/orders/side/bid"
+          }
+        },
+        {
+          "name": "Get Orders By Side (ask)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/orders/side/ask"
           }
         },
         {
           "name": "Cancel Order",
           "request": {
             "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "http://localhost:8000/order/cancel/1",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8000",
-              "path": ["order","cancel","1"]
-            }
+            "url": "{{base_url}}/orders/1/cancel"
           }
         }
       ]
     },
     {
       "name": "Prices",
-      "description": "Price endpoints",
       "item": [
         {
-          "name": "Get Current Price",
+          "name": "Get Last N Prices",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "http://localhost:8000/price",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8000",
-              "path": ["price"]
-            }
+            "url": "{{base_url}}/prices/last/1?n=50"
           }
         },
         {
-          "name": "Get Price History",
+          "name": "Get All Prices",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "http://localhost:8000/history?n=50",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8000",
-              "path": ["history"],
-              "query": [
-                { "key": "n", "value": "50" }
-              ]
-            }
+            "url": "{{base_url}}/prices/all/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Positions",
+      "item": [
+        {
+          "name": "Get Position",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/positions?user_id=1&asset_id=1"
+          }
+        },
+        {
+          "name": "Get All User Positions",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/positions/user/1"
           }
         }
       ]

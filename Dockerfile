@@ -1,23 +1,23 @@
-# Dockerfile
+# Use official Python base image
 FROM python:3.11-slim
 
-# Set working directory inside container
+# Set working directory
 WORKDIR /app
 
-# Copy requirements (if any)
-COPY requirements.txt ./
+# Copy requirements (we'll assume you have requirements.txt)
+COPY requirements.txt .
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy project files
-COPY ./app ./app
-COPY ./storage ./storage
+# Copy the rest of the app
+COPY . .
 
+# Module discovery
 ENV PYTHONPATH=/app
 
-# Expose port
+# Expose FastAPI default port
 EXPOSE 8000
 
-# Default command to run
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Set entry point
+CMD ["python", "app/main.py"]

@@ -1,33 +1,26 @@
 from app.storage.db import db
 
-
 class PriceRepository:
     def __init__(self):
         self.conn = db.conn
 
-    def insert_price(self, price: float):
+    def insert_price(self, asset_id: int, price: float):
         self.conn.execute(
-            "INSERT INTO price_history (price) VALUES (?)",
-            (price,)
+            "INSERT INTO price_history (asset_id, price) VALUES (?, ?)",
+            (asset_id, price)
         )
         self.conn.commit()
 
-    def insert_prices_batch(self, prices):
-        self.conn.executemany(
-            "INSERT INTO price_history (price) VALUES (?)",
-            [(p,) for p in prices]
-        )
-        self.conn.commit()
-
-    def get_last_n(self, n: int = 100):
+    def get_last_n(self, asset_id: int, n: int = 100):
         cursor = self.conn.execute(
-            "SELECT price, timestamp FROM price_history ORDER BY id DESC LIMIT ?",
-            (n,)
+            "SELECT price, timestamp FROM price_history WHERE asset_id=? ORDER BY id DESC LIMIT ?",
+            (asset_id, n)
         )
         return cursor.fetchall()
 
-    def get_all(self):
+    def get_all(self, asset_id: int):
         cursor = self.conn.execute(
-            "SELECT price, timestamp FROM price_history ORDER BY id ASC"
+            "SELECT price, timestamp FROM price_history WHERE asset_id=? ORDER BY id ASC",
+            (asset_id,)
         )
         return cursor.fetchall()

@@ -1,75 +1,97 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from app.storage.redis_client import add_order, get_order_from_redis, remove_order_from_redis
+from typing import List
+
+from app.storage.order_repository import OrderRepository
 from app.storage.user_repository import UserRepository
-from app.storage.position_repository import PositionRepository
 
-router = APIRouter()
+router = APIRouter(prefix="/orders", tags=["orders"])
 
+order_repo = OrderRepository()
 user_repo = UserRepository()
-position_repo = PositionRepository()
 
-
-class Order(BaseModel):
-    side: str      # "bid" or "ask"
+# ------------------------------
+# Schemas
+# ------------------------------
+class OrderCreate(BaseModel):
+    user_id: int
+    asset_id: int
+    side: str   # 'bid' or 'ask'
     price: float
     quantity: float
+
+class OrderOut(BaseModel):
+    id: int
     user_id: int
+    asset_id: int
+    side: str
+    price: float
+    quantity: float
+    status: str
+    timestamp: str
 
+# ------------------------------
+# Create order
+# ------------------------------
+@router.post("/", response_model=int)
+def create_order(order: OrderCreate):
+    order_id = order_repo.create_order(
+        user_id=order.user_id,
+        asset_id=order.asset_id,
+        side=order.side,
+        price=order.price,
+        quantity=order.quantity
+    )
+    return order_id
 
-@router.post("/order")
-def create_order(order: Order):
-    # Validate user
-    user = user_repo.get_user(order.user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    user_id, username, balance = user
-
-    # Check and reserve funds/assets
-    if order.side == "bid":
-        cost = order.price * order.quantity
-        if balance < cost:
-            raise HTTPException(status_code=400, detail="Insufficient balance")
-        user_repo.update_balance(order.user_id, balance - cost)
-
-    elif order.side == "ask":
-        position = position_repo.get_position(order.user_id)
-        if position < order.quantity:
-            raise HTTPException(status_code=400, detail="Not enough asset to sell")
-        position_repo.update_position(order.user_id, position - order.quantity)
-
-    else:
-        raise HTTPException(status_code=400, detail="Invalid side, must be 'bid' or 'ask'")
-
-    # Add order to Redis
-
-    order_id = add_order(order.side, order.price, order.quantity, order.user_id)
-    return {"status": "order added and funds/assets reserved", "order_id": order_id}
-
-
-@router.post("/order/cancel/{order_id}")
-def cancel_order(order_id: int):
-    # Get order from Redis
-    order = get_order_from_redis(order_id)
-    if not order:
+# ------------------------------
+# Get order by ID
+# ------------------------------
+@router.get("/{order_id}", response_model=OrderOut)
+def get_order(order_id: int):
+    row = order_repo.get_order(order_id)
+    if not row:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    user_id = order["user_id"]
+    return OrderOut(
+        id=row[0],
+        user_id=row[1],
+        asset_id=row[2],
+        side=row[3],
+        price=row[4],
+        quantity=row[5],
+        status=row[6],
+        timestamp=row[7]
+    )
 
-    # Restore reserved funds/assets
-    if order["side"] == "bid":
-        user = user_repo.get_user(user_id)
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        _, _, balance = user
-        user_repo.update_balance(user_id, balance + order["price"] * order["quantity"])
+# ------------------------------
+# Get open orders by side 'bid' or 'ask'
+# ------------------------------
+@router.get("/side/{side}", response_model=List[OrderOut])
+def get_orders_by_side(side: str):
+    rows = order_repo.get_orders_by_side(side)
 
-    elif order["side"] == "ask":
-        position = position_repo.get_position(user_id)
-        position_repo.update_position(user_id, position + order["quantity"])
+    return [
+        OrderOut(
+            id=r[0],
+            user_id=r[1],
+            asset_id=r[2],
+            price=r[3],
+            quantity=r[4],
+            status=r[5],
+            timestamp=r[6]
+        )
+        for r in rows
+    ]
 
-    # Remove order from Redis
-    remove_order_from_redis(order_id)
+# ------------------------------
+# Cancel order
+# ------------------------------
+@router.post("/{order_id}/cancel")
+def cancel_order(order_id: int):
+    success = order_repo.cancel_order(order_id, user_repo)
 
-    return {"status": "order cancelled and funds/assets released"}
+    if not success:
+        raise HTTPException(status_code=400, detail="Order cannot be cancelled")
+
+    return {"status": "cancelled", "order_id": order_id}

@@ -7,3 +7,9 @@ redis==7.3.0
 # Web API / WebSockets:
 fastapi==0.135.1
 uvicorn[standard]==0.42.0
+
+# Auto-Tests:
+pytest==9.0.2
+
+#Data
+pydantic==2.12.5
