@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stochastic Social Trading</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@3.3.0/dist/chartjs-chart-financial.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  </head>
+  <body class="app">
+    <div class="layout">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">ST</div>
+          <div>
+            <h1>Stochastic</h1>
+            <span>Social Trading</span>
+          </div>
+        </div>
+        <button class="sidebar-toggle" id="toggleSidebar">Toggle</button>
+        <nav class="sidebar-nav">
+          <button class="nav-item active" data-page="dashboard">Dashboard</button>
+          <button class="nav-item" data-page="markets">Markets</button>
+          <button class="nav-item" data-page="portfolio">Portfolio</button>
+          <button class="nav-item" data-page="watchlist">Watchlist</button>
+          <button class="nav-item" data-page="copy">Copy Traders</button>
+          <button class="nav-item" data-page="feed">News / Feed</button>
+          <button class="nav-item" data-page="settings">Settings</button>
+        </nav>
+      </aside>
+
+      <div class="main">
+        <header class="topbar">
+          <div class="search">
+            <input id="globalSearch" type="text" placeholder="Search assets or traders" />
+          </div>
+          <div class="top-actions">
+            <button class="ghost" id="notifBtn">Notifications</button>
+            <button class="secondary" id="depositBtn">Deposit</button>
+            <button class="primary" id="tradeBtn">Trade</button>
+            <div class="profile">A. Angelos</div>
+          </div>
+          <div class="notifications" id="notifPanel">
+            <h4>Notifications</h4>
+            <div class="notif-item">No new notifications</div>
+          </div>
+        </header>
+
+        <div class="content">
+          <section class="page active" data-page="dashboard">
+            <div class="page-header">
+              <h2>Dashboard</h2>
+              <span class="status" id="status">Disconnected</span>
+            </div>
+
+            <div class="grid-3">
+              <div class="card">
+                <h3>Portfolio Summary</h3>
+                <div class="stat-row">
+                  <span>Total Balance</span>
+                  <strong id="equityValue">—</strong>
+                </div>
+                <div class="stat-row">
+                  <span>Daily P/L</span>
+                  <strong id="pnlValue">—</strong>
+                </div>
+                <div class="stat-row">
+                  <span>Total Return</span>
+                  <strong id="statChangePct">0%</strong>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Connection</h3>
+                <label>
+                  API Base URL
+                  <input id="apiBase" type="text" value="http://localhost:8000" />
+                </label>
+                <label>
+                  WebSocket Symbol
+                  <input id="wsSymbol" type="text" placeholder="CMD1" />
+                </label>
+                <label>
+                  WS Interval (sec)
+                  <input id="wsInterval" type="number" min="0.1" step="0.1" value="0.5" />
+                </label>
+                <div class="actions">
+                  <button id="connectWs">Start Live Feed</button>
+                  <button class="secondary" id="disconnectWs">Stop</button>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Market Movers</h3>
+                <div class="table" id="livePrices"></div>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="card">
+                <h3>Watchlist Preview</h3>
+                <div id="watchListPreview" class="pill-list"></div>
+              </div>
+              <div class="card">
+                <h3>Social Feed Preview</h3>
+                <div class="feed-item">Top traders are gaining momentum today.</div>
+                <div class="feed-item">Market volatility remains elevated.</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" data-page="markets">
+            <div class="page-header">
+              <h2>Markets</h2>
+              <div class="market-filters">
+                <input id="marketSearch" type="text" placeholder="Search markets" />
+                <div class="tabs">
+                  <button class="tab active" data-category="stocks">Stocks</button>
+                  <button class="tab" data-category="crypto">Crypto</button>
+                  <button class="tab" data-category="etfs">ETFs</button>
+                  <button class="tab" data-category="forex">Forex</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="card">
+                <h3>Markets List</h3>
+                <div id="marketList" class="market-list"></div>
+              </div>
+              <div class="card">
+                <h3>Assets Table</h3>
+                <table class="asset-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Price</th>
+                      <th>% Change</th>
+                      <th>Volume</th>
+                    </tr>
+                  </thead>
+                  <tbody id="marketTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" data-page="portfolio">
+            <div class="page-header">
+              <h2>Portfolio</h2>
+            </div>
+            <div class="grid-2">
+              <div class="card">
+                <h3>Allocation</h3>
+                <div class="chart-panel">
+                  <canvas id="allocationChart" height="160"></canvas>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Open Positions</h3>
+                <div class="grid">
+                  <label>
+                    User ID
+                    <input id="posUserId" type="number" min="1" value="1" />
+                  </label>
+                  <label>
+                    Asset ID
+                    <input id="posAssetId" type="number" min="1" value="1" />
+                  </label>
+                  <div class="actions">
+                    <button id="getPosition">Get Position</button>
+                    <button class="secondary" id="getUserPositions">Get User Positions</button>
+                  </div>
+                </div>
+                <pre id="positionsOutput" class="output"></pre>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" data-page="watchlist">
+            <div class="page-header">
+              <h2>Watchlist</h2>
+            </div>
+            <div class="card">
+              <div class="grid">
+                <label>
+                  Symbol
+                  <input id="watchSymbol" type="text" placeholder="CMD1" />
+                </label>
+                <div class="actions">
+                  <button id="addWatch">Add</button>
+                  <button class="secondary" id="clearWatch">Clear</button>
+                </div>
+              </div>
+              <div id="watchList" class="pill-list"></div>
+            </div>
+          </section>
+
+          <section class="page" data-page="copy">
+            <div class="page-header">
+              <h2>Copy Traders</h2>
+            </div>
+            <div class="grid-3">
+              <div class="card trader-card">
+                <h3>Trader Alpha</h3>
+                <p>Return 18% · Risk 4</p>
+                <button class="primary" data-open="copyModal">Copy Trader</button>
+              </div>
+              <div class="card trader-card">
+                <h3>Trader Nova</h3>
+                <p>Return 24% · Risk 6</p>
+                <button class="primary" data-open="copyModal">Copy Trader</button>
+              </div>
+              <div class="card trader-card">
+                <h3>Trader Pulse</h3>
+                <p>Return 12% · Risk 3</p>
+                <button class="primary" data-open="copyModal">Copy Trader</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" data-page="feed">
+            <div class="page-header">
+              <h2>News & Social Feed</h2>
+            </div>
+            <div class="card">
+              <div class="feed-item">@lucas · +12% monthly return · “Tech rally continues.”</div>
+              <div class="feed-item">@hana · +8% monthly return · “Crypto momentum is strong.”</div>
+              <div class="feed-item">@matt · +15% monthly return · “Forex volatility warning.”</div>
+            </div>
+          </section>
+
+          <section class="page" data-page="settings">
+            <div class="page-header">
+              <h2>Settings</h2>
+            </div>
+            <div class="grid-2">
+              <div class="card">
+                <h3>Profile</h3>
+                <label>Username<input type="text" value="angelos" /></label>
+                <label>Email<input type="email" value="angelos@example.com" /></label>
+                <button class="primary">Save</button>
+              </div>
+              <div class="card">
+                <h3>Security</h3>
+                <label><input type="checkbox" /> Enable 2FA</label>
+                <button class="secondary">Update Security</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="page" data-page="asset-detail">
+            <div class="page-header">
+              <div>
+                <h2 id="assetName">Asset</h2>
+                <span id="assetPrice">—</span>
+                <span id="assetChange" class="badge">0%</span>
+              </div>
+              <div class="actions">
+                <button class="primary" data-open="tradeModal">Buy</button>
+                <button class="secondary" data-open="tradeModal">Sell</button>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="card chart-card">
+                <div class="chart-header">
+                  <div>
+                    <h3>Price Chart</h3>
+                    <p class="muted">Candlesticks with indicators</p>
+                  </div>
+                  <div class="actions">
+                    <label>
+                      Symbol
+                      <select id="chartSymbol"></select>
+                    </label>
+                    <label>
+                      Timeframe
+                      <select id="chartTimeframe">
+                        <option value="1m">1m</option>
+                        <option value="5m" selected>5m</option>
+                        <option value="15m">15m</option>
+                        <option value="30m">30m</option>
+                        <option value="1h">1H</option>
+                        <option value="4h">4H</option>
+                        <option value="1d">1D</option>
+                        <option value="1w">1W</option>
+                        <option value="1M">1M</option>
+                      </select>
+                    </label>
+                    <button id="fetchLast">Refresh</button>
+                    <button class="secondary" id="fetchAll">Load All</button>
+                  </div>
+                </div>
+                <div class="chart-grid">
+                  <div class="chart-panel">
+                    <canvas id="priceChart" height="160"></canvas>
+                  </div>
+                  <div class="chart-panel slim">
+                    <h3>Indicators</h3>
+                    <label class="toggle">
+                      <input type="checkbox" id="toggleSma" checked />
+                      SMA (14)
+                    </label>
+                    <label class="toggle">
+                      <input type="checkbox" id="toggleEma" checked />
+                      EMA (14)
+                    </label>
+                    <label class="toggle">
+                      <input type="checkbox" id="toggleRsi" />
+                      RSI (14)
+                    </label>
+                    <div class="metric">
+                      <span class="muted">RSI</span>
+                      <strong id="rsiValue">—</strong>
+                    </div>
+                    <div class="metric">
+                      <span class="muted">Momentum</span>
+                      <strong id="momentumValue">—</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <aside class="card trade-panel">
+                <h3>Trade Panel</h3>
+                <div class="toggle-group">
+                  <button class="primary">Buy</button>
+                  <button class="secondary">Sell</button>
+                </div>
+                <label>Amount<input id="orderPrice" type="number" step="0.01" value="100" /></label>
+                <label>Quantity<input id="orderQty" type="number" step="0.01" value="5" /></label>
+                <label>Leverage<select><option>1x</option><option>2x</option><option>5x</option></select></label>
+                <label><input type="checkbox" /> Stop Loss</label>
+                <label><input type="checkbox" /> Take Profit</label>
+                <button class="primary" id="createOrder">Execute Trade</button>
+              </aside>
+            </div>
+
+            <div class="grid-2">
+              <div class="card">
+                <h3>Order Book</h3>
+                <div class="orderbook">
+                  <div>
+                    <h4>Bids</h4>
+                    <div id="orderBookBids" class="order-table"></div>
+                  </div>
+                  <div>
+                    <h4>Asks</h4>
+                    <div id="orderBookAsks" class="order-table"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Trade Tape</h3>
+                <div id="tradeTape" class="tape"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>Price History</h3>
+              <div class="grid">
+                <label>
+                  Asset ID
+                  <input id="priceAssetId" type="number" min="1" value="1" />
+                </label>
+                <label>
+                  Last N
+                  <input id="priceLastN" type="number" min="1" value="50" />
+                </label>
+                <div class="actions">
+                  <button id="fetchLastHistory">Fetch Last N</button>
+                  <button class="secondary" id="fetchAllHistory">Fetch All</button>
+                </div>
+              </div>
+              <pre id="priceHistory" class="output"></pre>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="tradeModal">
+      <div class="modal-content">
+        <h3>Trade Execution</h3>
+        <label>Buy / Sell<select><option>Buy</option><option>Sell</option></select></label>
+        <label>Amount<input type="number" value="100" /></label>
+        <label>Leverage<select><option>1x</option><option>2x</option></select></label>
+        <label><input type="checkbox" /> Stop Loss</label>
+        <label><input type="checkbox" /> Take Profit</label>
+        <button class="primary" id="confirmTrade">Confirm</button>
+        <button class="secondary" data-close="tradeModal">Cancel</button>
+      </div>
+    </div>
+
+    <div class="modal" id="copyModal">
+      <div class="modal-content">
+        <h3>Copy Trader</h3>
+        <label>Amount<input type="number" value="500" /></label>
+        <label>Risk<select><option>Low</option><option>Medium</option><option>High</option></select></label>
+        <label><input type="checkbox" /> Stop copying if drawdown > 10%</label>
+        <button class="primary">Start Copying</button>
+        <button class="secondary" data-close="copyModal">Cancel</button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

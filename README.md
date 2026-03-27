@@ -66,6 +66,7 @@ stochastic-trading-engine/
 │   │   ├── price_test.py
 │   │   └── user_test.py
 │   └── test_ws.html
+├── frontend-react/        # React frontend (Vite)
 ├── docker-compose.yml
 ├── Dockerfile
 ├── postman.json
@@ -89,6 +90,20 @@ docker run -p 8000:8000 price-sim
 
 
 Server will run at: `http://localhost:8000`
+
+---
+
+## 🖥️ Frontend (React)
+
+Run the frontend in a separate terminal while the backend is running.
+
+```bash
+cd frontend-react
+npm install
+npm run dev
+```
+
+Vite dev server defaults to: `http://localhost:5173`
 
 ---
 

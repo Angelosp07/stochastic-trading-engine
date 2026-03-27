@@ -7,9 +7,9 @@ DB_PATH = ROOT_DIR / "storage" / "market.db"
 
 def seed_assets(conn):
     assets = [
-        ("AAPL", "Apple Inc.", 180.0, 0.001, 0.01, 0.2, 0.2, 0.02, 0.02),
-        ("GOOGL", "Alphabet Inc.", 140.0, 0.0012, 0.012, 0.25, 0.25, 0.015, 0.015),
-        ("TSLA", "Tesla Inc.", 220.0, 0.002, 0.02, 0.3, 0.3, 0.03, 0.03),
+        ("AAPL", "Apple Inc.", 180.0, 0.0002, 0.004, 0.02, 0.02, 0.002, 0.002),
+        ("GOOGL", "Alphabet Inc.", 140.0, 0.00025, 0.0045, 0.02, 0.02, 0.002, 0.002),
+        ("TSLA", "Tesla Inc.", 220.0, 0.00035, 0.006, 0.03, 0.03, 0.003, 0.003),
     ]
 
     conn.executemany("""

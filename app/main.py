@@ -1,13 +1,14 @@
 import asyncio
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from app.storage.position_repository import PositionRepository
-from engine.processes.brownian import BrownianMotion
-from engine.processes.birth_death import BirthDeathProcess
-from engine.processes.jump import JumpProcess
-from engine.price_engine import PriceEngine
-from engine.scheduler import Scheduler
+from app.engine.processes.brownian import BrownianMotion
+from app.engine.processes.birth_death import BirthDeathProcess
+from app.engine.processes.jump import JumpProcess
+from app.engine.price_engine import PriceEngine
+from app.engine.scheduler import Scheduler
 
 from app.storage.db import *
 from app.storage.order_repository import OrderRepository
@@ -20,16 +21,25 @@ from app.api.routes.orders import router as orders_router
 from app.api.routes.price import router as price_router
 from app.api.routes.user import router as users_router
 from app.api.routes.positions import router as positions_router
+from app.api.routes.assets import router as assets_router
 
 # ------------------------------
 # Initialize FastAPI
 # ------------------------------
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(router)
 app.include_router(orders_router)
 app.include_router(price_router)
 app.include_router(users_router)
 app.include_router(positions_router)
+app.include_router(assets_router)
 
 # ------------------------------
 # Initialize DB for demo
@@ -84,7 +94,7 @@ async def run_all_schedulers():
         scheduler = Scheduler(
             engine=engine,
             asset_id=idx,
-            dt=0.5,
+            dt=0.1,
             order_repo=order_repo,
             user_repository=user_repo,
             position_repository=position_repo,

@@ -1,9 +1,9 @@
 import asyncio
-from engine.processes.brownian import BrownianMotion
-from engine.processes.birth_death import BirthDeathProcess
-from engine.processes.jump import JumpProcess
-from engine.price_engine import PriceEngine
-from engine.scheduler import Scheduler
+from app.engine.processes.brownian import BrownianMotion
+from app.engine.processes.birth_death import BirthDeathProcess
+from app.engine.processes.jump import JumpProcess
+from app.engine.price_engine import PriceEngine
+from app.engine.scheduler import Scheduler
 from app.storage.order_repository import OrderRepository
 from app.storage.user_repository import UserRepository
 from app.config import *
@@ -45,7 +45,7 @@ async def main():
     scheduler = Scheduler(
         engine=engine,
         asset_id=1,
-        dt=0.5,
+        dt=0.1,
         order_repo=order_repo,
         user_repository=user_repository,
         debug=True
