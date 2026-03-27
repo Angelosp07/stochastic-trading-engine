@@ -1,6 +1,6 @@
 # Stochastic Trading Backend
 
-A demo trading platform backend that simulates asset prices using stochastic processes (Brownian motion and birth-death processes). It supports user management, order placement and cancellation, an order book, and price streaming via REST API and WebSocket.
+A demo trading platform that simulates asset prices using stochastic processes (Brownian motion and birth-death processes). It supports user management, order placement and cancellation, an order book, price history, and live price streaming via REST API + WebSocket.
 
 This project is intended as a **Fintech hackathon demo**. For simplicity and due to the short timeframe, trades occur against random walks rather than reflecting real demand and supply dynamics.
 
@@ -22,7 +22,11 @@ This project is intended as a **Fintech hackathon demo**. For simplicity and due
   - Automatic updates to user balances and asset holdings
 - **API**
   - REST endpoints for users, orders, prices, and price history
-  - WebSocket for live price streaming
+  - WebSocket for live price streaming with UTC timestamps
+  - Realistic bulk history generation endpoint for chart backfill
+- **Frontend (React)**
+  - Modern trading UI with Overview / Chart / Financials tabs
+  - Canvas candlesticks, volume bars, crosshair, SMA, zoom and pan
 - **Storage**
   - SQLite database for users, orders, positions, and price history
 
@@ -30,11 +34,12 @@ This project is intended as a **Fintech hackathon demo**. For simplicity and due
 
 ## 🗂️ Project Structure
 
-```
+```text
 stochastic-trading-engine/               
 ├── app/
 │   ├── api/             # API routes
 │   │   ├── routes/
+│   │   │   ├── assets.py
 │   │   │   ├── positions.py
 │   │   │   ├── orders.py
 │   │   │   ├── price.py
@@ -93,6 +98,19 @@ Server will run at: `http://localhost:8000`
 
 ---
 
+## ▶️ Local Backend Setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m app.main
+```
+
+Backend will run at: `http://localhost:8000`
+
+---
+
 ## 🖥️ Frontend (React)
 
 Run the frontend in a separate terminal while the backend is running.
@@ -103,7 +121,7 @@ npm install
 npm run dev
 ```
 
-Vite dev server defaults to: `http://localhost:5173`
+Vite dev server defaults to: `http://localhost:5173` (or next available port)
 
 ---
 
@@ -131,6 +149,12 @@ Vite dev server defaults to: `http://localhost:5173`
 |--------|----------|-------|-------------|
 | GET    | `/prices/last/{asset_id}` | `n=int` | Get last `n` price points for an asset |
 | GET    | `/prices/all/{asset_id}` | None | Get all historical prices for an asset |
+| POST   | `/prices/generate/{asset_id}` | body JSON | Generate large realistic historical data for an asset |
+
+### Assets
+| Method | Endpoint | Body | Description |
+|--------|----------|------|-------------|
+| GET    | `/assets/` | None | List all seeded assets |
 
 ### Positions
 | Method | Endpoint | Query | Description |
@@ -141,7 +165,7 @@ Vite dev server defaults to: `http://localhost:5173`
 ### WebSocket
 | Endpoint | Description |
 |----------|-------------|
-| `/ws/price` | Stream live prices for one or multiple assets at a configurable interval |
+| `/ws/price` | Stream live engine prices with UTC timestamp (`symbol` and `interval` query params supported) |
 ---
 
 ## 💾 Database
@@ -164,5 +188,7 @@ Import the `Trading Engine API` collection (JSON file) into Postman for testing 
 
 ## 🔧 Notes
 
-- The backend is **development** stage
+- The backend is **development** stage.
+- WebSocket stream now logs timestamped ticks in server console.
+- Frontend live candles consume engine-provided `timestamp` from the stream.
 
