@@ -5,15 +5,17 @@ import { computeSma } from "../utils/indicators.js";
 import { fromPriceInt } from "../utils/candleUtils.js";
 
 const COLORS = {
-  background: "#0e1117",
-  grid: "rgba(148, 163, 184, 0.18)",
-  bullish: "#26a69a",
-  bearish: "#ef5350",
-  text: "#e6edf3",
-  muted: "#8b949e"
+  background: "#0b1222",
+  grid: "rgba(72, 93, 133, 0.25)",
+  bullish: "#00d3b8",
+  bearish: "#ff4b6e",
+  text: "#e9efff",
+  muted: "#8292b3",
+  panel: "#111a2e"
 };
 
 const PADDING = { top: 20, right: 40, bottom: 32, left: 60 };
+const ZOOM_STEP = 4;
 
 const formatPrice = (value) => value.toFixed(2);
 
@@ -38,18 +40,26 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
       })),
     [visibleData]
   );
+
+  // --- Price/volume axis calculations ---
   const prices = useMemo(
     () => renderData.flatMap((candle) => [candle.high, candle.low]),
     [renderData]
   );
+  const minPrice = prices.length ? Math.min(...prices) : 0;
+  const maxPrice = prices.length ? Math.max(...prices) : 1;
+  const priceRange = Math.max(maxPrice - minPrice, Number.EPSILON);
 
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
-  const priceRange = maxPrice - minPrice || 1;
+  const volumes = useMemo(() => renderData.map((c) => c.volume ?? 0), [renderData]);
+  const maxVolume = Math.max(...volumes, 1);
+
+  const chartTop = PADDING.top;
+  const chartHeight = height - PADDING.top - PADDING.bottom - 60;
+  const volumeHeight = 60;
 
   const candleWidth = Math.max(
     4,
-    (width - PADDING.left - PADDING.right) / visibleData.length - 2
+    (width - PADDING.left - PADDING.right) / renderData.length - 2
   );
 
   const indexToX = (index) =>
@@ -57,7 +67,13 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
 
   const priceToY = (price) => {
     const scaled = (price - minPrice) / priceRange;
-    return height - PADDING.bottom - scaled * (height - PADDING.top - PADDING.bottom);
+    const y = chartTop + chartHeight - scaled * chartHeight;
+    return Math.min(chartTop + chartHeight, Math.max(chartTop, y));
+  };
+
+  const volumeToY = (vol) => {
+    const scaled = vol / maxVolume;
+    return height - PADDING.bottom - scaled * volumeHeight;
   };
 
   const smaLine = useMemo(() => {
@@ -80,13 +96,58 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
     canvas.style.height = `${height}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     clearCanvas(ctx, width, height, COLORS.background);
-    drawGrid(ctx, width, height, PADDING, COLORS.grid);
+
+    // Draw grid
+    drawGrid(ctx, width, height - volumeHeight, PADDING, COLORS.grid);
+
+    // Draw price axis labels
+    ctx.save();
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = "12px Inter, sans-serif";
+    for (let i = 0; i <= 5; i++) {
+      const price = minPrice + (priceRange * (5 - i)) / 5;
+      const y = priceToY(price);
+      ctx.fillText(formatPrice(price), width - PADDING.right + 8, y + 4);
+    }
+    ctx.restore();
+
+    // Draw time axis labels
+    ctx.save();
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = "12px Inter, sans-serif";
+    const labelStep = Math.max(1, Math.floor(renderData.length / 8));
+    for (let i = 0; i < renderData.length; i += labelStep) {
+      const candle = renderData[i];
+      const x = indexToX(i);
+      const date = new Date(candle.timestamp);
+      const label = date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      ctx.fillText(label, x - 18, height - PADDING.bottom + 16);
+    }
+    ctx.restore();
 
     if (!renderData.length) {
       drawText(ctx, "Waiting for candle data...", PADDING.left, height / 2, COLORS.muted);
       return;
     }
 
+    // Draw volume bars
+    renderData.forEach((candle, idx) => {
+      const x = indexToX(idx);
+      const y = volumeToY(candle.volume ?? 0);
+      const color = candle.close >= candle.open ? COLORS.bullish : COLORS.bearish;
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = color;
+      ctx.fillRect(
+        x - candleWidth / 2,
+        y,
+        candleWidth,
+        height - PADDING.bottom - y
+      );
+      ctx.restore();
+    });
+
+    // Draw candles
     renderData.forEach((candle, idx) => {
       const x = indexToX(idx);
       const openY = priceToY(candle.open);
@@ -113,42 +174,49 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
       );
     });
 
+    // Draw SMA
     const smaPoints = smaLine.filter((pt) => pt.y !== null);
     drawLine(ctx, smaPoints, "#f59e0b", 1.5);
 
+    // Draw crosshair and tooltip
     if (hoverIndex !== null && renderData[hoverIndex]) {
       const hoverCandle = renderData[hoverIndex];
-      ctx.strokeStyle = "rgba(148, 163, 184, 0.6)";
+      ctx.strokeStyle = "rgba(140, 160, 196, 0.55)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(hoverPos.x, PADDING.top);
-      ctx.lineTo(hoverPos.x, height - PADDING.bottom);
+      ctx.moveTo(indexToX(hoverIndex), PADDING.top);
+      ctx.lineTo(indexToX(hoverIndex), height - PADDING.bottom);
       ctx.stroke();
 
       ctx.beginPath();
-      ctx.moveTo(PADDING.left, hoverPos.y);
-      ctx.lineTo(width - PADDING.right, hoverPos.y);
+      ctx.moveTo(PADDING.left, priceToY(hoverCandle.close));
+      ctx.lineTo(width - PADDING.right, priceToY(hoverCandle.close));
       ctx.stroke();
 
-      drawText(
-        ctx,
-        `${new Date(hoverCandle.timestamp).toLocaleString()} | O ${formatPrice(
-          hoverCandle.open
-        )} H ${formatPrice(hoverCandle.high)} L ${formatPrice(hoverCandle.low)} C ${formatPrice(
-          hoverCandle.close
-        )}`,
-        PADDING.left,
-        PADDING.top - 6,
-        COLORS.text
-      );
+      // Tooltip
+      const tooltip = `${new Date(hoverCandle.timestamp).toLocaleString()} | O ${formatPrice(
+        hoverCandle.open
+      )} H ${formatPrice(hoverCandle.high)} L ${formatPrice(hoverCandle.low)} C ${formatPrice(
+        hoverCandle.close
+      )} V ${hoverCandle.volume ?? 0}`;
+      ctx.save();
+      ctx.font = "13px Inter, sans-serif";
+      ctx.fillStyle = COLORS.panel;
+      ctx.globalAlpha = 0.95;
+      const tw = ctx.measureText(tooltip).width + 16;
+      ctx.fillRect(20, 20, tw, 28);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = COLORS.text;
+      ctx.fillText(tooltip, 28, 40);
+      ctx.restore();
     }
 
-    drawText(ctx, `${timeframe.toUpperCase()} · ${visibleData.length} candles`, PADDING.left, height - 10, COLORS.muted);
-  }, [renderData, hoverIndex, hoverPos, smaLine, timeframe]);
+    drawText(ctx, `${timeframe.toUpperCase()} · ${renderData.length} candles`, PADDING.left, height - 10, COLORS.muted);
+  }, [renderData, hoverIndex, hoverPos, smaLine, timeframe, width, height]);
 
   useEffect(() => {
     setWindowToEnd();
-  }, [data.length]);
+  }, [timeframe]);
 
   const handleMouseMove = (event) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -175,7 +243,14 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
 
   const handleWheel = (event) => {
     event.preventDefault();
-    zoom(event.deltaY > 0 ? 10 : -10);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const localIndex = Math.floor((x - PADDING.left) / (candleWidth + 2));
+    const inRange = localIndex >= 0 && localIndex < visibleData.length;
+    const anchorGlobalIndex = inRange
+      ? window.start + localIndex
+      : window.start + Math.floor(visibleData.length / 2);
+    zoom(event.deltaY > 0 ? ZOOM_STEP : -ZOOM_STEP, anchorGlobalIndex);
   };
 
   const handleMouseDown = (event) => {

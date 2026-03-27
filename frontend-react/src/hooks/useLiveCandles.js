@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   aggregateToCandles,
   toPriceInt,
@@ -29,7 +29,7 @@ export default function useLiveCandles({ assetId, timeframe }) {
 
   const bucketMs = timeframeToMs[timeframe] || 300_000;
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     setStatus("loading");
     setError(null);
     try {
@@ -73,16 +73,16 @@ export default function useLiveCandles({ assetId, timeframe }) {
       setError(err.message);
       setStatus("error");
     }
-  };
+  }, [assetId, bucketMs]);
 
   useEffect(() => {
     if (!assetId) return;
     fetchHistory();
-  }, [assetId, timeframe]);
+  }, [assetId, timeframe, fetchHistory]);
 
   useEffect(() => {
     if (!assetId) return;
-    const wsUrl = `ws://localhost:8000/ws/price?symbol=CMD${assetId}`;
+    const wsUrl = `ws://localhost:8000/ws/price?symbol=CMD${assetId}&interval=0.1`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -92,12 +92,14 @@ export default function useLiveCandles({ assetId, timeframe }) {
         const price = payload.price ?? payload[`CMD${assetId}`];
         if (!Number.isFinite(Number(price))) return;
         if (Number(price) <= 0) return;
-        const timestamp = payload.timestamp ? new Date(payload.timestamp).getTime() : Date.now();
+        if (!payload.timestamp) return;
+        const timestamp = new Date(payload.timestamp).getTime();
         if (!Number.isFinite(timestamp)) return;
         if (lastTickRef.current !== null && timestamp < lastTickRef.current) return;
         lastTickRef.current = timestamp;
         const priceInt = toPriceInt(Number(price));
         if (!Number.isFinite(priceInt)) return;
+        console.debug("[stream]", payload.timestamp, `CMD${assetId}`, Number(price));
         setCandles((prev) => updateLastCandle(prev, timestamp, priceInt, bucketMs, 0));
       } catch {
         // ignore
@@ -112,6 +114,7 @@ export default function useLiveCandles({ assetId, timeframe }) {
   return {
     candles,
     status,
-    error
+    error,
+    refreshHistory: fetchHistory
   };
 }

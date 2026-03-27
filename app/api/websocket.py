@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from typing import Dict, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
@@ -8,10 +9,15 @@ router = APIRouter()
 class PriceOut(BaseModel):
     symbol: str
     price: float
+    timestamp: str
 
 # Helper to get current price from engine
 def _sample_price(symbol: str, engine: object) -> PriceOut:
-    return PriceOut(symbol=symbol, price=float(engine.price))
+    return PriceOut(
+        symbol=symbol,
+        price=float(engine.price),
+        timestamp=datetime.now(timezone.utc).isoformat()
+    )
 
 @router.websocket("/ws/price")
 async def price_stream(
@@ -41,13 +47,19 @@ async def price_stream(
 
             while True:
                 po = _sample_price(symbol, eng)
+                print(f"[WS][{po.timestamp}] {po.symbol}={po.price:.6f}")
                 await websocket.send_json(po.model_dump())
                 await asyncio.sleep(interval)
 
         else:
             # Multi-symbol mode
             while True:
-                payload = {sym: float(eng.price) for sym, eng in engines.items()}
+                tick_ts = datetime.now(timezone.utc).isoformat()
+                payload = {
+                    "timestamp": tick_ts,
+                    **{sym: float(eng.price) for sym, eng in engines.items()}
+                }
+                print(f"[WS][{tick_ts}] {payload}")
                 await websocket.send_json(payload)
                 await asyncio.sleep(interval)
 
