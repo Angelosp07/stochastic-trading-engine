@@ -7,30 +7,38 @@ export default function useChartState(dataLength, initialWindow = 120) {
   const [offset, setOffset] = useState(0);
   const [autoFollow, setAutoFollow] = useState(true);
 
-  const maxOffset = Math.max(0, dataLength - visibleCount);
+  const safeDataLength = Math.max(0, dataLength);
+  const minVisible = safeDataLength > 0 ? Math.min(20, safeDataLength) : 1;
+  const maxVisible = Math.max(1, safeDataLength);
+  const effectiveVisibleCount = clamp(visibleCount, minVisible, maxVisible);
+  const maxOffset = Math.max(0, safeDataLength - effectiveVisibleCount);
 
   const window = useMemo(() => {
     const safeOffset = clamp(offset, 0, maxOffset);
     return {
       start: safeOffset,
-      end: safeOffset + visibleCount
+      end: Math.min(safeDataLength, safeOffset + effectiveVisibleCount)
     };
-  }, [offset, visibleCount, maxOffset]);
+  }, [offset, maxOffset, safeDataLength, effectiveVisibleCount]);
+
+  useEffect(() => {
+    setOffset((prev) => clamp(prev, 0, Math.max(0, safeDataLength - effectiveVisibleCount)));
+  }, [safeDataLength, effectiveVisibleCount]);
 
   useEffect(() => {
     if (!autoFollow) return;
-    setOffset(Math.max(0, dataLength - visibleCount));
-  }, [autoFollow, dataLength, visibleCount]);
+    setOffset(Math.max(0, safeDataLength - effectiveVisibleCount));
+  }, [autoFollow, safeDataLength, effectiveVisibleCount]);
 
   const zoom = useCallback(
     (delta, anchorGlobalIndex = null) => {
-      const currentCount = Math.min(visibleCount, Math.max(1, dataLength));
-      const nextCount = clamp(currentCount + delta, 20, Math.max(40, dataLength));
-      const maxNextOffset = Math.max(0, dataLength - nextCount);
+      const currentCount = effectiveVisibleCount;
+      const nextCount = clamp(currentCount + delta, minVisible, maxVisible);
+      const maxNextOffset = Math.max(0, safeDataLength - nextCount);
 
       setVisibleCount(nextCount);
       setOffset((prev) => {
-        const prevSafe = clamp(prev, 0, Math.max(0, dataLength - currentCount));
+        const prevSafe = clamp(prev, 0, Math.max(0, safeDataLength - currentCount));
         if (!Number.isFinite(anchorGlobalIndex)) {
           return clamp(prevSafe, 0, maxNextOffset);
         }
@@ -41,7 +49,7 @@ export default function useChartState(dataLength, initialWindow = 120) {
       });
       setAutoFollow(false);
     },
-    [dataLength, visibleCount]
+    [effectiveVisibleCount, maxVisible, minVisible, safeDataLength]
   );
 
   const pan = useCallback(
@@ -54,8 +62,8 @@ export default function useChartState(dataLength, initialWindow = 120) {
 
   const setWindowToEnd = useCallback(() => {
     setAutoFollow(true);
-    setOffset(Math.max(0, dataLength - visibleCount));
-  }, [dataLength, visibleCount]);
+    setOffset(Math.max(0, safeDataLength - effectiveVisibleCount));
+  }, [safeDataLength, effectiveVisibleCount]);
 
-  return { window, visibleCount, zoom, pan, setWindowToEnd };
+  return { window, visibleCount: effectiveVisibleCount, zoom, pan, setWindowToEnd };
 }

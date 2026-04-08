@@ -8,48 +8,161 @@ class OrderRepository:
         self.conn = db.conn
 
     # Create a new order
-    def create_order(self, user_id: int, asset_id: int, side: str, price: float, quantity: float):
+    def create_order(
+        self,
+        user_id: int,
+        asset_id: int,
+        side: str,
+        price: float,
+        quantity: float,
+        order_type: str = "market",
+        stop_price: float | None = None,
+        take_profit_price: float | None = None,
+        limit_price: float | None = None,
+    ):
         cursor = self.conn.cursor()
         cursor.execute(
             """
-            INSERT INTO orders (user_id, asset_id, side, price, quantity, status)
-            VALUES (?, ?, ?, ?, ?, 'open')
+            INSERT INTO orders (user_id, asset_id, side, price, quantity, status, order_type, stop_price, take_profit_price, limit_price)
+            VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)
             """,
-            (user_id, asset_id, side, price, quantity)
+            (user_id, asset_id, side, price, quantity, order_type, stop_price, take_profit_price, limit_price)
         )
         order_id = cursor.lastrowid
         self.conn.commit()
         return order_id
 
+    def create_filled_order(
+        self,
+        user_id: int,
+        asset_id: int,
+        side: str,
+        price: float,
+        quantity: float,
+        order_type: str = "market",
+        stop_price: float | None = None,
+        take_profit_price: float | None = None,
+        limit_price: float | None = None,
+    ):
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO orders (user_id, asset_id, side, price, quantity, status, order_type, stop_price, take_profit_price, limit_price)
+            VALUES (?, ?, ?, ?, ?, 'filled', ?, ?, ?, ?)
+            """,
+            (user_id, asset_id, side, price, quantity, order_type, stop_price, take_profit_price, limit_price)
+        )
+        order_id = cursor.lastrowid
+        self.conn.commit()
+        return order_id
+
+    def record_fill(
+        self,
+        user_id: int,
+        asset_id: int,
+        side: str,
+        quantity: float,
+        requested_price: float | None,
+        execution_price: float,
+        fee: float,
+        slippage: float,
+        order_type: str = "market",
+        status: str = "filled",
+        notes: str | None = None,
+    ):
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO fills (
+                user_id, asset_id, side, quantity, requested_price,
+                execution_price, fee, slippage, order_type, status, notes
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                asset_id,
+                side,
+                quantity,
+                requested_price,
+                execution_price,
+                fee,
+                slippage,
+                order_type,
+                status,
+                notes,
+            ),
+        )
+        self.conn.commit()
+        return cursor.lastrowid
+
     # Get an order by ID
     def get_order(self, order_id: int):
         return self.conn.execute(
-            "SELECT id, user_id, asset_id, side, price, quantity, status, timestamp FROM orders WHERE id=?",
+            """
+            SELECT id, user_id, asset_id, side, price, quantity, status, timestamp,
+                   COALESCE(order_type, 'market'), stop_price, take_profit_price, limit_price
+            FROM orders
+            WHERE id=?
+            """,
             (order_id,)
         ).fetchone()
 
+    def get_orders_for_user(self, user_id: int, limit: int = 200):
+        cursor = self.conn.execute(
+            """
+            SELECT o.id, o.user_id, o.asset_id, a.symbol, a.name, o.side, o.price, o.quantity,
+                   o.status, o.timestamp, COALESCE(o.order_type, 'market')
+            FROM orders o
+            JOIN assets a ON a.id = o.asset_id
+            WHERE o.user_id = ?
+            ORDER BY o.id DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
+        )
+        return cursor.fetchall()
+
+    def get_fills_for_user(self, user_id: int, limit: int = 500):
+        cursor = self.conn.execute(
+            """
+            SELECT f.id, f.user_id, f.asset_id, a.symbol, a.name, f.side, f.quantity,
+                   f.requested_price, f.execution_price, f.fee, f.slippage,
+                   f.order_type, f.status, f.notes, f.timestamp
+            FROM fills f
+            JOIN assets a ON a.id = f.asset_id
+            WHERE f.user_id = ?
+            ORDER BY f.id DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
+        )
+        return cursor.fetchall()
+
+    def update_open_order(self, order_id: int, quantity: float | None = None, limit_price: float | None = None):
+        order = self.get_order(order_id)
+        if not order or order[6] != "open":
+            return None
+
+        next_quantity = float(order[5]) if quantity is None else float(quantity)
+        if next_quantity <= 0:
+            return None
+
+        next_limit = order[11] if limit_price is None else float(limit_price)
+
+        self.conn.execute(
+            "UPDATE orders SET quantity = ?, limit_price = ? WHERE id = ?",
+            (next_quantity, next_limit, order_id),
+        )
+        self.conn.commit()
+        return self.get_order(order_id)
+
     # Cancel an order (mark as cancelled)
-    def cancel_order(self, order_id: int, user_repo: UserRepository):
-        """
-        Cancel an open order and refund the user's balance (for bids) or restore shares (for asks).
-        """
+    def cancel_order(self, order_id: int, _user_repo: UserRepository):
+        """Cancel an open order by marking status as cancelled."""
         order = self.get_order(order_id)
         if not order or order[6] != "open":  # status index 6
             return False
-
-        user_id = order[1]  # user_id
-        side = order[3]  # 'bid' or 'ask'
-        price = order[4]
-        quantity = order[5]
-
-        # Refund logic
-        if side == "bid":
-            # Refund the locked funds
-            refund_amount = price * quantity
-            user_repo.update_balance(user_id, refund_amount)
-        elif side == "ask":
-            # Optional: return shares to user position if you locked them
-            user_repo.update_position(user_id, order[2], quantity)  # asset_id at index 2
 
         # Mark order as cancelled
         self.conn.execute(

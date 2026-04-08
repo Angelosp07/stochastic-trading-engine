@@ -46,3 +46,27 @@ class PriceRepository:
             (asset_id,)
         )
         return cursor.fetchall()
+
+    def get_latest_point(self, asset_id: int):
+        cursor = self.conn.execute(
+            "SELECT price, timestamp FROM price_history WHERE asset_id=? ORDER BY id DESC LIMIT 1",
+            (asset_id,)
+        )
+        return cursor.fetchone()
+
+    def get_latest_points_map(self, asset_ids):
+        if not asset_ids:
+            return {}
+        placeholders = ",".join(["?"] * len(asset_ids))
+        query = f"""
+            SELECT ph.asset_id, ph.price, ph.timestamp
+            FROM price_history ph
+            JOIN (
+                SELECT asset_id, MAX(id) AS max_id
+                FROM price_history
+                WHERE asset_id IN ({placeholders})
+                GROUP BY asset_id
+            ) latest ON latest.max_id = ph.id
+        """
+        rows = self.conn.execute(query, tuple(asset_ids)).fetchall()
+        return {int(row[0]): {"price": float(row[1]), "timestamp": row[2]} for row in rows}

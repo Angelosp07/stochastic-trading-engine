@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import useChartState from "../hooks/useChartState.js";
 import { clearCanvas, drawGrid, drawLine, drawText } from "../utils/drawUtils.js";
-import { computeSma } from "../utils/indicators.js";
+import { computeEma, computeMacd, computeRsi, computeSma } from "../utils/indicators.js";
 import { fromPriceInt } from "../utils/candleUtils.js";
 
 const COLORS = {
@@ -19,12 +19,28 @@ const ZOOM_STEP = 4;
 
 const formatPrice = (value) => value.toFixed(2);
 
-export default function CandlestickChart({ data, width, height, timeframe, smaPeriod }) {
+export default function CandlestickChart({
+  data,
+  width,
+  height,
+  timeframe,
+  smaPeriod,
+  showEma = false,
+  showRsi = false,
+  showMacd = false,
+  drawEnabled = false,
+  drawMode = "none",
+  drawResetToken = 0,
+  drawUndoToken = 0
+}) {
   const canvasRef = useRef(null);
   const [hoverIndex, setHoverIndex] = useState(null);
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [lastX, setLastX] = useState(0);
+  const [drawingPaths, setDrawingPaths] = useState([]);
+  const [currentPath, setCurrentPath] = useState([]);
+  const [isDrawing, setIsDrawing] = useState(false);
 
   const { window, zoom, pan, setWindowToEnd } = useChartState(data.length, 120);
 
@@ -76,6 +92,31 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
     return height - PADDING.bottom - scaled * volumeHeight;
   };
 
+  const clampPoint = (point) => ({
+    x: Math.max(PADDING.left, Math.min(width - PADDING.right, point.x)),
+    y: Math.max(PADDING.top, Math.min(height - PADDING.bottom, point.y))
+  });
+
+  const isPathDrawable = (path) => {
+    if (!Array.isArray(path) || path.length < 2) return false;
+    const first = path[0];
+    const last = path[path.length - 1];
+    return Math.abs((last?.x ?? 0) - (first?.x ?? 0)) + Math.abs((last?.y ?? 0) - (first?.y ?? 0)) > 2;
+  };
+
+  useEffect(() => {
+    setDrawingPaths([]);
+    setCurrentPath([]);
+    setIsDrawing(false);
+  }, [drawResetToken]);
+
+  useEffect(() => {
+    if (!drawUndoToken) return;
+    setDrawingPaths((prev) => (prev.length ? prev.slice(0, -1) : prev));
+    setCurrentPath([]);
+    setIsDrawing(false);
+  }, [drawUndoToken]);
+
   const smaLine = useMemo(() => {
     const closes = renderData.map((candle) => candle.close);
     const sma = computeSma(closes, smaPeriod);
@@ -84,6 +125,18 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
       y: value ? priceToY(value) : null
     }));
   }, [renderData, smaPeriod]);
+
+  const emaLine = useMemo(() => {
+    const closes = renderData.map((candle) => candle.close);
+    const ema = computeEma(closes, Math.max(5, Math.floor(smaPeriod / 2)));
+    return ema.map((value, idx) => ({
+      x: indexToX(idx),
+      y: value ? priceToY(value) : null
+    }));
+  }, [renderData, smaPeriod]);
+
+  const rsiSeries = useMemo(() => computeRsi(renderData.map((candle) => candle.close), 14), [renderData]);
+  const macdSeries = useMemo(() => computeMacd(renderData.map((candle) => candle.close)), [renderData]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -178,6 +231,31 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
     const smaPoints = smaLine.filter((pt) => pt.y !== null);
     drawLine(ctx, smaPoints, "#f59e0b", 1.5);
 
+    if (showEma) {
+      const emaPoints = emaLine.filter((pt) => pt.y !== null);
+      drawLine(ctx, emaPoints, "#60a5fa", 1.2);
+    }
+
+    const drawPath = (path) => {
+      if (!Array.isArray(path) || path.length < 2) return;
+      ctx.save();
+      ctx.strokeStyle = "#ffd166";
+      ctx.lineWidth = 2;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.95;
+      ctx.beginPath();
+      ctx.moveTo(path[0].x, path[0].y);
+      for (let index = 1; index < path.length; index += 1) {
+        ctx.lineTo(path[index].x, path[index].y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    };
+
+    drawingPaths.forEach(drawPath);
+    drawPath(currentPath);
+
     // Draw crosshair and tooltip
     if (hoverIndex !== null && renderData[hoverIndex]) {
       const hoverCandle = renderData[hoverIndex];
@@ -211,8 +289,20 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
       ctx.restore();
     }
 
-    drawText(ctx, `${timeframe.toUpperCase()} · ${renderData.length} candles`, PADDING.left, height - 10, COLORS.muted);
-  }, [renderData, hoverIndex, hoverPos, smaLine, timeframe, width, height]);
+    const latestRsi = rsiSeries[rsiSeries.length - 1];
+    const latestMacd = macdSeries.macdLine[macdSeries.macdLine.length - 1];
+    const latestSignal = macdSeries.signalLine[macdSeries.signalLine.length - 1];
+    const indicators = [];
+    if (showRsi && Number.isFinite(latestRsi)) indicators.push(`RSI ${latestRsi.toFixed(1)}`);
+    if (showMacd && Number.isFinite(latestMacd) && Number.isFinite(latestSignal)) indicators.push(`MACD ${latestMacd.toFixed(2)}/${latestSignal.toFixed(2)}`);
+    drawText(
+      ctx,
+      `${timeframe.toUpperCase()} · ${renderData.length} candles${indicators.length ? ` · ${indicators.join(" · ")}` : ""}`,
+      PADDING.left,
+      height - 10,
+      COLORS.muted
+    );
+  }, [renderData, hoverIndex, hoverPos, smaLine, emaLine, rsiSeries, macdSeries, timeframe, width, height, showEma, showRsi, showMacd, drawingPaths, currentPath]);
 
   useEffect(() => {
     setWindowToEnd();
@@ -222,7 +312,34 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
     const rect = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
-    setHoverPos({ x, y });
+    const point = clampPoint({ x, y });
+    setHoverPos(point);
+
+    if (drawEnabled && isDrawing) {
+      if (drawMode === "line") {
+        setCurrentPath((prev) => {
+          if (!prev.length) return [point, point];
+          return [prev[0], point];
+        });
+      } else if (drawMode === "hRay") {
+        setCurrentPath((prev) => {
+          if (!prev.length) return [point, point];
+          const start = prev[0];
+          const endX = point.x >= start.x ? width - PADDING.right : PADDING.left;
+          return [start, { x: endX, y: start.y }];
+        });
+      } else if (drawMode === "vRay") {
+        setCurrentPath((prev) => {
+          if (!prev.length) return [point, point];
+          const start = prev[0];
+          const endY = point.y >= start.y ? height - PADDING.bottom : PADDING.top;
+          return [start, { x: start.x, y: endY }];
+        });
+      } else {
+        setCurrentPath((prev) => [...prev, point]);
+      }
+      return;
+    }
 
     const index = Math.floor((x - PADDING.left) / (candleWidth + 2));
     if (index >= 0 && index < visibleData.length) {
@@ -242,6 +359,10 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
   };
 
   const handleWheel = (event) => {
+    if (drawEnabled) {
+      event.preventDefault();
+      return;
+    }
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - rect.left;
@@ -254,16 +375,42 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
   };
 
   const handleMouseDown = (event) => {
+    if (drawEnabled) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const point = clampPoint({
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top
+      });
+      setCurrentPath(drawMode === "line" || drawMode === "hRay" || drawMode === "vRay" ? [point, point] : [point]);
+      setIsDrawing(true);
+      return;
+    }
+
     setDragging(true);
     const rect = event.currentTarget.getBoundingClientRect();
     setLastX(event.clientX - rect.left);
   };
 
   const handleMouseUp = () => {
+    if (drawEnabled && isDrawing) {
+      if (isPathDrawable(currentPath)) {
+        setDrawingPaths((prev) => [...prev, currentPath]);
+      }
+      setCurrentPath([]);
+      setIsDrawing(false);
+      return;
+    }
     setDragging(false);
   };
 
   const handleMouseLeave = () => {
+    if (drawEnabled && isDrawing) {
+      if (isPathDrawable(currentPath)) {
+        setDrawingPaths((prev) => [...prev, currentPath]);
+      }
+      setCurrentPath([]);
+      setIsDrawing(false);
+    }
     setDragging(false);
     setHoverIndex(null);
   };
@@ -273,6 +420,7 @@ export default function CandlestickChart({ data, width, height, timeframe, smaPe
       ref={canvasRef}
       width={width}
       height={height}
+      className={`chart-canvas ${drawEnabled ? "drawing" : ""}`}
       onMouseMove={handleMouseMove}
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}

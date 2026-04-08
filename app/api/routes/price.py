@@ -31,6 +31,7 @@ class GeneratePricesIn(BaseModel):
     jump_scale: float = 0.03
     seed: int = 42
     clear_existing: bool = False
+    continue_from_latest: bool = True
 
 
 class GeneratePricesOut(BaseModel):
@@ -91,9 +92,22 @@ def generate_prices(asset_id: int, payload: GeneratePricesIn):
 
     dt = payload.interval_seconds / 60.0
     now = datetime.now(timezone.utc)
-    start_time = now - timedelta(seconds=(payload.n - 1) * payload.interval_seconds)
+    latest = None if payload.clear_existing else price_repo.get_latest_point(asset_id)
+    if payload.continue_from_latest and latest:
+        last_price = float(latest[0])
+        last_ts_raw = latest[1]
+        try:
+            last_ts = datetime.fromisoformat(str(last_ts_raw).replace("Z", "+00:00"))
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            last_ts = now
+        start_time = last_ts + timedelta(seconds=payload.interval_seconds)
+        price = max(0.01, last_price)
+    else:
+        start_time = now - timedelta(seconds=(payload.n - 1) * payload.interval_seconds)
+        price = payload.start_price
 
-    price = payload.start_price
     min_price = price
     max_price = price
     rows = []

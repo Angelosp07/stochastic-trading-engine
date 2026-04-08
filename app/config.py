@@ -1,8 +1,16 @@
 from pathlib import Path
+import hashlib
+import secrets
 import sqlite3
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT_DIR / "storage" / "market.db"
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 200_000)
+    return f"{salt}${digest.hex()}"
 
 
 def seed_assets(conn):
@@ -43,12 +51,26 @@ def seed_users(conn):
         ("Bob", 750000.0)
     ]
 
+    default_password_hash = hash_password("demo123")
+
+    for username, balance in users:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO users (username, balance, password_hash)
+            VALUES (?, ?, ?)
+            """,
+            (username, balance, default_password_hash),
+        )
+
     # Insert users into the DB
-    conn.executemany("""
-                     INSERT
-                     OR IGNORE INTO users (username, balance)
-        VALUES (?, ?)
-                     """, users)
+    conn.execute(
+        """
+        UPDATE users
+        SET password_hash = ?
+        WHERE password_hash IS NULL OR password_hash = ''
+        """,
+        (default_password_hash,),
+    )
 
     conn.commit()
 
@@ -61,7 +83,7 @@ def clear_tables(db_path: str = "app.db"):
     """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    tables = ["orders", "price_history", "positions", "assets", "users"]  # add any other demo tables
+    tables = ["fills", "user_alerts", "orders", "price_history", "positions", "user_watchlist", "assets", "users"]  # add any other demo tables
     for table in tables:
         cursor.execute(f"DELETE FROM {table};")
         cursor.execute(f"DELETE FROM sqlite_sequence WHERE name='{table}';")  # reset AUTOINCREMENT

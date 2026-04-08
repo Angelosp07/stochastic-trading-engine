@@ -5,6 +5,11 @@ import {
   updateLastCandle
 } from "../utils/candleUtils.js";
 
+const STREAM_INTERVAL_SECONDS = 0.05;
+const STALE_THRESHOLD_MS = 3_000;
+const RECONNECT_BASE_MS = 250;
+const RECONNECT_MAX_MS = 5_000;
+
 const timeframeToMs = {
   "5s": 5_000,
   "10s": 10_000,
@@ -20,12 +25,17 @@ const timeframeToMs = {
   "1M": 2_592_000_000
 };
 
-export default function useLiveCandles({ assetId, timeframe }) {
+export default function useLiveCandles({ assetId, timeframe, symbol }) {
   const [candles, setCandles] = useState([]);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
+  const [streamState, setStreamState] = useState("idle");
+  const [isStale, setIsStale] = useState(false);
+  const [lastTickAt, setLastTickAt] = useState(null);
   const wsRef = useRef(null);
   const lastTickRef = useRef(null);
+  const reconnectTimerRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
 
   const bucketMs = timeframeToMs[timeframe] || 300_000;
 
@@ -81,40 +91,101 @@ export default function useLiveCandles({ assetId, timeframe }) {
   }, [assetId, timeframe, fetchHistory]);
 
   useEffect(() => {
-    if (!assetId) return;
-    const wsUrl = `ws://localhost:8000/ws/price?symbol=CMD${assetId}&interval=0.1`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    if (!assetId || !symbol) return;
+    let disposed = false;
 
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        const price = payload.price ?? payload[`CMD${assetId}`];
-        if (!Number.isFinite(Number(price))) return;
-        if (Number(price) <= 0) return;
-        if (!payload.timestamp) return;
-        const timestamp = new Date(payload.timestamp).getTime();
-        if (!Number.isFinite(timestamp)) return;
-        if (lastTickRef.current !== null && timestamp < lastTickRef.current) return;
-        lastTickRef.current = timestamp;
-        const priceInt = toPriceInt(Number(price));
-        if (!Number.isFinite(priceInt)) return;
-        console.debug("[stream]", payload.timestamp, `CMD${assetId}`, Number(price));
-        setCandles((prev) => updateLastCandle(prev, timestamp, priceInt, bucketMs, 0));
-      } catch {
-        // ignore
+    const clearReconnect = () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
       }
     };
 
-    return () => {
-      ws.close();
+    const connect = () => {
+      if (disposed) return;
+
+      setStreamState(reconnectAttemptsRef.current === 0 ? "connecting" : "reconnecting");
+      const wsUrl = `ws://localhost:8000/ws/price?symbol=${encodeURIComponent(symbol)}&interval=${STREAM_INTERVAL_SECONDS}`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        reconnectAttemptsRef.current = 0;
+        setStreamState("live");
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          const price = payload.price ?? payload[symbol];
+          if (!Number.isFinite(Number(price))) return;
+          if (Number(price) <= 0) return;
+          if (!payload.timestamp) return;
+          const timestamp = new Date(payload.timestamp).getTime();
+          if (!Number.isFinite(timestamp)) return;
+          if (lastTickRef.current !== null && timestamp < lastTickRef.current) return;
+
+          lastTickRef.current = timestamp;
+          setLastTickAt(timestamp);
+          setIsStale(false);
+          setStreamState("live");
+
+          const priceInt = toPriceInt(Number(price));
+          if (!Number.isFinite(priceInt)) return;
+          setCandles((prev) => updateLastCandle(prev, timestamp, priceInt, bucketMs, 0));
+        } catch {
+          // ignore malformed payloads
+        }
+      };
+
+      ws.onerror = () => {
+        setStreamState("error");
+      };
+
+      ws.onclose = () => {
+        if (disposed) return;
+        reconnectAttemptsRef.current += 1;
+        const delay = Math.min(
+          RECONNECT_BASE_MS * 2 ** reconnectAttemptsRef.current,
+          RECONNECT_MAX_MS
+        );
+        setStreamState("reconnecting");
+        clearReconnect();
+        reconnectTimerRef.current = setTimeout(connect, delay);
+      };
     };
-  }, [assetId, bucketMs]);
+
+    connect();
+    return () => {
+      disposed = true;
+      clearReconnect();
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      setStreamState("idle");
+    };
+  }, [assetId, bucketMs, symbol]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!lastTickRef.current) return;
+      const stale = Date.now() - lastTickRef.current > STALE_THRESHOLD_MS;
+      setIsStale(stale);
+      if (stale && (streamState === "live" || streamState === "reconnecting")) {
+        setStreamState("stale");
+      }
+    }, 750);
+    return () => clearInterval(timer);
+  }, [streamState]);
 
   return {
     candles,
     status,
     error,
-    refreshHistory: fetchHistory
+    refreshHistory: fetchHistory,
+    streamState,
+    isStale,
+    lastTickAt,
+    streamIntervalSeconds: STREAM_INTERVAL_SECONDS
   };
 }
