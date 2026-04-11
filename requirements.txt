@@ -13,3 +13,6 @@ pytest==9.0.2
 
 #Data
 pydantic==2.12.5
+
+# PDF generation
+reportlab==4.4.2

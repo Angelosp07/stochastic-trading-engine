@@ -263,6 +263,74 @@ nav {
   align-items: center;
 }
 
+.notification-button {
+  position: relative;
+}
+
+.notification-button.active {
+  border-color: rgba(92, 122, 255, 0.75);
+  color: var(--text);
+}
+
+.notification-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+  border: 1px solid rgba(8, 13, 24, 0.9);
+}
+
+.notification-panel {
+  margin: 12px 20px -4px;
+  background: rgba(17, 28, 47, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  box-shadow: var(--shadow);
+}
+
+.notification-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.notification-panel-head span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notification-panel-list {
+  display: grid;
+  gap: 8px;
+}
+
+.notification-item {
+  background: rgba(22, 212, 160, 0.08);
+  border: 1px solid rgba(22, 212, 160, 0.28);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.notification-item small {
+  color: var(--muted);
+}
+
 .primary,
 button {
   background: var(--accent);
@@ -330,13 +398,40 @@ button:active {
   padding: 16px 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
 .page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+}
+
+.page h2 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: 0.2px;
+}
+
+.status-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 8px 0 2px;
+}
+
+.status-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+}
+
+.status-rail-item small {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .grid-3 {
@@ -366,6 +461,7 @@ button:active {
   margin: 0;
   font-size: 15px;
   letter-spacing: 0.2px;
+  line-height: 1.25;
 }
 
 .stat-row {
@@ -632,7 +728,661 @@ input:focus {
 
 .watchlist-actions {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.contract-form-grid,
+.freight-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.contract-form-grid > button,
+.freight-form-grid > button {
+  align-self: end;
+  justify-self: start;
+}
+
+.contract-counterparty-results {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  max-height: 190px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.contract-counterparty-item {
+  width: 100%;
+  text-align: left;
+  border-radius: 10px;
+  border: 1px solid rgba(126, 146, 186, 0.24);
+  background: rgba(25, 37, 60, 0.72);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+}
+
+.contract-counterparty-item span {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.contract-counterparty-item small {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.contract-counterparty-item.active {
+  border-color: rgba(92, 122, 255, 0.75);
+  background: rgba(92, 122, 255, 0.14);
+}
+
+.contract-counterparty-selected {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(92, 122, 255, 0.45);
+  background: rgba(92, 122, 255, 0.14);
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #d8e0f5;
+  font-size: 12px;
+}
+
+.contract-search-row {
+  margin-bottom: 10px;
+  grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr) auto;
+  align-items: end;
+}
+
+.contract-search-row > label {
+  margin: 0;
+}
+
+.contract-search-row > button {
+  align-self: end;
+}
+
+.contracts-list {
+  display: grid;
+  gap: 10px;
+}
+
+.contract-item {
+  background: rgba(18, 30, 50, 0.8);
+  border: 1px solid rgba(126, 146, 186, 0.26);
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.contract-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.contract-item-head strong {
+  font-size: 14px;
+}
+
+.contract-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.contract-signature-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.contract-signature-row span {
+  border-radius: 999px;
+  padding: 3px 8px;
+  border: 1px solid rgba(126, 146, 186, 0.22);
+  color: var(--muted);
+  background: rgba(25, 37, 60, 0.55);
+}
+
+.contract-signature-row span.positive {
+  color: #0fe1b1;
+  border-color: rgba(22, 212, 160, 0.42);
+  background: rgba(22, 212, 160, 0.12);
+}
+
+.contract-event-list {
+  background: rgba(15, 24, 41, 0.72);
+  border: 1px solid rgba(126, 146, 186, 0.2);
+  border-radius: 10px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.contract-event-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.contract-event-row span {
+  color: #d8e0f5;
+}
+
+.contract-event-row small {
+  color: var(--muted);
+}
+
+.route-progress-card {
+  background: rgba(18, 30, 50, 0.82);
+  border: 1px solid rgba(126, 146, 186, 0.24);
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.route-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.route-progress-head span {
+  color: #d8e0f5;
+  font-size: 12px;
+  border: 1px solid rgba(92, 122, 255, 0.45);
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: rgba(92, 122, 255, 0.14);
+}
+
+.route-progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(126, 146, 186, 0.22);
+  overflow: hidden;
+}
+
+.route-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(22, 212, 160, 0.95), rgba(92, 122, 255, 0.95));
+}
+
+.route-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cargo-map-card {
+  gap: 10px;
+}
+
+.cargo-map-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.cargo-map-subtitle {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cargo-map-head h3 {
+  margin: 0;
+}
+
+.cargo-map-wrap {
+  display: grid;
+  gap: 10px;
+}
+
+.cargo-leaflet-map {
+  width: 100%;
+  height: 320px;
+  border-radius: 14px;
+  border: 1px solid rgba(126, 146, 186, 0.24);
+  overflow: hidden;
+  background: radial-gradient(1200px 420px at 5% -15%, rgba(92, 122, 255, 0.18), transparent 68%), rgba(10, 18, 33, 0.95);
+}
+
+.leaflet-tooltip.cargo-leaflet-label {
+  border: 1px solid rgba(126, 146, 186, 0.32);
+  border-radius: 8px;
+  background: rgba(14, 24, 42, 0.94);
+  color: #dce7ff;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 8px 18px rgba(8, 13, 27, 0.42);
+}
+
+.leaflet-tooltip.cargo-leaflet-label:before {
+  border-right-color: rgba(14, 24, 42, 0.94);
+}
+
+.cargo-map-svg {
+  width: 100%;
+  min-height: 280px;
+  border-radius: 14px;
+  border: 1px solid rgba(126, 146, 186, 0.24);
+  background: radial-gradient(1200px 420px at 5% -15%, rgba(92, 122, 255, 0.18), transparent 68%), rgba(10, 18, 33, 0.95);
+}
+
+.cargo-map-bg {
+  fill: transparent;
+}
+
+.cargo-route-line {
+  stroke: rgba(92, 122, 255, 0.45);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+
+.cargo-port-dot {
+  fill: rgba(245, 194, 107, 0.95);
+  stroke: rgba(15, 24, 41, 0.95);
+  stroke-width: 1.5;
+}
+
+.cargo-port-dot.mine {
+  fill: rgba(245, 194, 107, 0.95);
+}
+
+.cargo-port-dot.factory {
+  fill: rgba(22, 212, 160, 0.96);
+}
+
+.cargo-marker-dot {
+  fill: rgba(22, 212, 160, 0.95);
+  stroke: rgba(14, 24, 42, 1);
+  stroke-width: 1.8;
+  animation: cargoPulse 1.2s ease-in-out infinite;
+}
+
+.cargo-marker-label {
+  fill: #dce7ff;
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.cargo-map-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cargo-map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cargo-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #8fa1ca;
+  flex-shrink: 0;
+}
+
+.cargo-status-dot.mine {
+  background: rgba(245, 194, 107, 0.95);
+}
+
+.cargo-status-dot.factory {
+  background: rgba(22, 212, 160, 0.96);
+}
+
+.cargo-status-dot.neutral {
+  background: #8fa1ca;
+}
+
+.cargo-status-dot.departed,
+.cargo-status-dot.in_transit {
+  background: var(--accent);
+}
+
+.cargo-status-dot.arrived,
+.cargo-status-dot.delivered {
+  background: var(--green);
+}
+
+.cargo-status-dot.cancelled {
+  background: var(--red);
+}
+
+@keyframes cargoPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+.watchlist-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.watchlist-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.table-actions-cell {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.watchlist-alert-form {
+  align-items: end;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(126, 146, 186, 0.25);
+  margin-bottom: 6px;
+}
+
+.alerts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.alerts-column {
+  display: grid;
+  gap: 8px;
+}
+
+.alerts-column h4 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.2px;
+  color: #ced8ef;
+}
+
+.chat-layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.chat-page-subtitle {
+  margin: -8px 0 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.chat-sidebar {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.chat-sidebar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-sidebar-head span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chat-clear-search {
+  width: fit-content;
+  border-radius: 8px;
+}
+
+.chat-section-label {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #a9b6d5;
+}
+
+.chat-search-results,
+.chat-conversation-list {
+  display: grid;
+  gap: 8px;
+  max-height: 240px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.chat-selected-pill {
+  background: rgba(92, 122, 255, 0.14);
+  border: 1px solid rgba(92, 122, 255, 0.45);
+  border-radius: 10px;
+  padding: 7px 9px;
+  font-size: 12px;
+  color: #d8e0f5;
+}
+
+.chat-selected-pill strong {
+  color: var(--text);
+}
+
+.chat-user-item {
+  width: 100%;
+  text-align: left;
+  border-radius: 10px;
+  border: 1px solid rgba(126, 146, 186, 0.24);
+  background: rgba(25, 37, 60, 0.72);
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  color: var(--text);
+}
+
+.chat-user-item span {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.chat-user-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-user-item-head small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chat-user-item small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chat-user-item.active {
+  border-color: rgba(92, 122, 255, 0.75);
+  background: rgba(92, 122, 255, 0.14);
+}
+
+.chat-main {
+  min-height: 520px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 10px;
+}
+
+.chat-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-header-row h3 {
+  margin: 0;
+}
+
+.chat-header-meta {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chat-messages-scroll {
+  overflow: auto;
+  border: 1px solid rgba(126, 146, 186, 0.24);
+  background: rgba(15, 24, 41, 0.7);
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.chat-empty-state {
+  min-height: 220px;
+  border: 1px dashed rgba(126, 146, 186, 0.35);
+  border-radius: 10px;
+  display: grid;
+  place-content: center;
+  gap: 4px;
+  text-align: center;
+  color: var(--muted);
+  padding: 10px;
+}
+
+.chat-empty-state strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.chat-bubble-row {
+  display: flex;
+}
+
+.chat-bubble-row.mine {
   justify-content: flex-end;
+}
+
+.chat-bubble-row.theirs {
+  justify-content: flex-start;
+}
+
+.chat-bubble {
+  max-width: min(75%, 620px);
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.chat-bubble.mine {
+  background: rgba(92, 122, 255, 0.2);
+  border: 1px solid rgba(92, 122, 255, 0.45);
+  border-radius: 14px 14px 5px 14px;
+}
+
+.chat-bubble.theirs {
+  background: rgba(24, 35, 56, 0.95);
+  border: 1px solid rgba(126, 146, 186, 0.24);
+  border-radius: 14px 14px 14px 5px;
+}
+
+.chat-bubble-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat-bubble-meta span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #dce7ff;
+}
+
+.chat-bubble-meta small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.chat-bubble-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.42;
+}
+
+.chat-compose-row {
+  display: grid;
+  grid-template-columns: 1fr 130px;
+  gap: 10px;
+  align-items: end;
+}
+
+.chat-compose-actions {
+  display: grid;
+  gap: 8px;
+  justify-items: stretch;
+}
+
+.chat-compose-actions small {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.chat-compose-actions .primary {
+  width: 100%;
+}
+
+.chat-compose-row textarea {
+  min-height: 78px;
+  max-height: 180px;
+  resize: vertical;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  font: inherit;
+}
+
+.chat-compose-row textarea:focus {
+  outline: none;
+  border-color: rgba(92, 122, 255, 0.72);
+  box-shadow: 0 0 0 3px rgba(92, 122, 255, 0.15);
 }
 
 .watchlist-pill {
@@ -943,8 +1693,36 @@ input:focus {
 
   .dashboard-kpis,
   .dashboard-main-grid,
-  .dashboard-bottom-grid {
+  .dashboard-bottom-grid,
+  .watchlist-summary-grid,
+  .watchlist-layout,
+  .alerts-grid,
+  .chat-layout,
+  .contract-form-grid,
+  .freight-form-grid,
+  .contract-search-row,
+  .cargo-map-legend {
     grid-template-columns: 1fr;
+  }
+
+  .chat-main {
+    min-height: 460px;
+  }
+
+  .status-rail {
+    gap: 8px;
+  }
+
+  .status-rail-item {
+    flex-wrap: wrap;
+  }
+
+  .chat-compose-row {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-compose-actions small {
+    text-align: left;
   }
 
   .dashboard-hero {

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { CircleMarker, MapContainer, Polyline, TileLayer, Tooltip } from "react-leaflet";
 import CandlestickChart from "./components/CandlestickChart.jsx";
 import useLiveCandles from "./hooks/useLiveCandles.js";
 import { fromPriceInt } from "./utils/candleUtils.js";
@@ -6,7 +7,10 @@ import { fromPriceInt } from "./utils/candleUtils.js";
 const API_BASE = "http://localhost:8000";
 const TRADING_FEE_RATE = 0.001;
 const PRICE_STREAM_INTERVAL_SECONDS = 0.5;
-const ACCOUNT_SYNC_INTERVAL_MS = 20_000;
+const ACCOUNT_SYNC_INTERVAL_MS = 8_000;
+const CONTRACTS_SYNC_INTERVAL_MS = 4_000;
+const SHIPMENTS_SYNC_INTERVAL_MS = 4_000;
+const FREIGHT_SYNC_INTERVAL_MS = 6_000;
 
 const timeframes = [
   { label: "5s", value: "5s" },
@@ -28,8 +32,10 @@ const navItems = [
   { key: "markets", label: "Markets", icon: "◎" },
   { key: "portfolio", label: "Portfolio", icon: "◔" },
   { key: "watchlist", label: "Watchlist", icon: "☆" },
-  { key: "copy", label: "Copy Traders", icon: "⇄" },
-  { key: "feed", label: "News / Feed", icon: "☰" },
+  { key: "chat", label: "Chat", icon: "✉" },
+  { key: "contracts", label: "Contract Suite", icon: "✎" },
+  { key: "cargo", label: "Live Cargo", icon: "⛴" },
+  { key: "freight", label: "Freight Desk", icon: "⚓" },
   { key: "settings", label: "Settings", icon: "⚙" }
 ];
 
@@ -46,6 +52,15 @@ const streamLabel = (state, stale) => {
   if (state === "connecting") return "Connecting";
   if (state === "error") return "Error";
   return "Idle";
+};
+
+const contractPresetsBySymbol = {
+  LI2CO3: { quantityKg: "2500", purityPct: "99.5", pricePerKg: "52", deliveryTerms: "CIF" },
+  COBM: { quantityKg: "1800", purityPct: "99.2", pricePerKg: "47", deliveryTerms: "FOB" },
+  NIBQ: { quantityKg: "5000", purityPct: "99.8", pricePerKg: "23", deliveryTerms: "CIF" },
+  GALL: { quantityKg: "350", purityPct: "99.99", pricePerKg: "315", deliveryTerms: "DAP" },
+  GERM: { quantityKg: "220", purityPct: "99.99", pricePerKg: "1495", deliveryTerms: "DAP" },
+  DYOX: { quantityKg: "900", purityPct: "99.0", pricePerKg: "372", deliveryTerms: "EXW" },
 };
 
 export default function App() {
@@ -93,6 +108,51 @@ export default function App() {
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertsMessage, setAlertsMessage] = useState("");
   const [watchlistMessage, setWatchlistMessage] = useState("");
+  const [alertToasts, setAlertToasts] = useState([]);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [chatSearchQuery, setChatSearchQuery] = useState("");
+  const [chatSearchResults, setChatSearchResults] = useState([]);
+  const [chatConversations, setChatConversations] = useState([]);
+  const [selectedChatUser, setSelectedChatUser] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatSending, setChatSending] = useState(false);
+  const [chatMessage, setChatMessage] = useState("");
+  const [contracts, setContracts] = useState([]);
+  const [contractEventsById, setContractEventsById] = useState({});
+  const [contractsLoading, setContractsLoading] = useState(false);
+  const [contractsMessage, setContractsMessage] = useState("");
+  const [contractSearchQuery, setContractSearchQuery] = useState("");
+  const [contractStatusFilter, setContractStatusFilter] = useState("all");
+  const [contractCounterpartyQuery, setContractCounterpartyQuery] = useState("");
+  const [contractCounterparties, setContractCounterparties] = useState([]);
+  const [contractSelectedCounterpartyName, setContractSelectedCounterpartyName] = useState("");
+  const [contractForm, setContractForm] = useState({
+    counterpartyUserId: "",
+    assetSymbol: "",
+    quantityKg: "1000",
+    purityPct: "99.5",
+    pricePerKg: "50",
+    deliveryTerms: "CIF",
+    originPort: "NLRTM",
+    destinationPort: "SGSIN"
+  });
+  const [shipments, setShipments] = useState([]);
+  const [shipmentEventsById, setShipmentEventsById] = useState({});
+  const [shipmentsLoading, setShipmentsLoading] = useState(false);
+  const [shipmentsMessage, setShipmentsMessage] = useState("");
+  const [freightPorts, setFreightPorts] = useState([]);
+  const [freightRates, setFreightRates] = useState([]);
+  const [freightVessels, setFreightVessels] = useState([]);
+  const [freightLoading, setFreightLoading] = useState(false);
+  const [freightMessage, setFreightMessage] = useState("");
+  const [freightFilters, setFreightFilters] = useState({
+    originPort: "NLRTM",
+    destinationPort: "SGSIN",
+    cargoTons: "20000"
+  });
   const [closePreviewByAsset, setClosePreviewByAsset] = useState({});
   const [showEma, setShowEma] = useState(false);
   const [showRsi, setShowRsi] = useState(false);
@@ -109,6 +169,8 @@ export default function App() {
   const previousHoldingsRef = useRef(null);
   const previousEquityRef = useRef(null);
   const accountSyncInFlightRef = useRef(false);
+  const previousAlertsMapRef = useRef(new Map());
+  const chatMessagesScrollRef = useRef(null);
 
   const {
     candles,
@@ -327,6 +389,18 @@ export default function App() {
     setFillHistory([]);
     setAccountActivity(null);
     setAlerts([]);
+    setContracts([]);
+    setContractEventsById({});
+    setContractCounterpartyQuery("");
+    setContractCounterparties([]);
+    setShipments([]);
+    setShipmentEventsById({});
+    setFreightPorts([]);
+    setFreightRates([]);
+    setFreightVessels([]);
+    setContractsMessage("");
+    setShipmentsMessage("");
+    setFreightMessage("");
     setClosePreviewByAsset({});
   };
 
@@ -452,6 +526,401 @@ export default function App() {
     } finally {
       setWatchlistLoading(false);
     }
+  };
+
+  const loadChatConversations = async (userId, options = {}) => {
+    if (!userId) return;
+    const { silent = false } = options;
+    if (!silent) {
+      setChatLoading(true);
+    }
+    try {
+      const res = await fetch(`${API_BASE}/chat/conversations/${userId}?limit=25`);
+      const data = await res.json().catch(() => []);
+      if (!res.ok) {
+        throw new Error(data?.detail || "Failed to load conversations");
+      }
+      const list = Array.isArray(data) ? data : [];
+      setChatConversations(list);
+      setSelectedChatUser((prev) => {
+        if (prev) {
+          const matchedConversation = list.find(
+            (conversation) => String(conversation.user?.id) === String(prev.id)
+          );
+          if (matchedConversation?.user) {
+            return matchedConversation.user;
+          }
+          return prev;
+        }
+        return list[0]?.user || null;
+      });
+    } catch (err) {
+      setChatMessage(err.message || "Failed to load conversations.");
+      setChatConversations([]);
+    } finally {
+      if (!silent) {
+        setChatLoading(false);
+      }
+    }
+  };
+
+  const loadChatMessages = async (userId, otherUserId, options = {}) => {
+    if (!userId || !otherUserId) return;
+    const { silent = false } = options;
+    if (!silent) {
+      setChatLoading(true);
+    }
+    try {
+      const res = await fetch(
+        `${API_BASE}/chat/messages?user_id=${userId}&other_user_id=${otherUserId}&limit=250`
+      );
+      const data = await res.json().catch(() => []);
+      if (!res.ok) {
+        throw new Error(data?.detail || "Failed to load messages");
+      }
+      setChatMessages(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setChatMessage(err.message || "Failed to load messages.");
+      setChatMessages([]);
+    } finally {
+      if (!silent) {
+        setChatLoading(false);
+      }
+    }
+  };
+
+  const handleChatSearch = async (query) => {
+    if (!currentUser?.id) return;
+    const q = query.trim();
+    if (!q) {
+      setChatSearchResults([]);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `${API_BASE}/chat/users/search?requester_id=${currentUser.id}&q=${encodeURIComponent(q)}&limit=15`
+      );
+      const data = await res.json().catch(() => []);
+      if (!res.ok) {
+        throw new Error(data?.detail || "Failed to search users");
+      }
+      setChatSearchResults(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setChatMessage(err.message || "Failed to search users.");
+      setChatSearchResults([]);
+    }
+  };
+
+  const handleStartChatWithUser = async (user) => {
+    setChatMessage("");
+    setSelectedChatUser(user);
+    setChatSearchQuery("");
+    setChatSearchResults([]);
+    setChatMessages([]);
+    await loadChatMessages(currentUser?.id, user.id);
+  };
+
+  const handleSendChatMessage = async () => {
+    if (!currentUser?.id || !selectedChatUser?.id || chatSending) return;
+    const message = chatDraft.trim();
+    if (!message) {
+      setChatMessage("Type a message before sending.");
+      return;
+    }
+    setChatSending(true);
+    setChatMessage("");
+    try {
+      const res = await fetch(`${API_BASE}/chat/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sender_user_id: currentUser.id,
+          receiver_user_id: selectedChatUser.id,
+          message
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.detail || "Failed to send message");
+      }
+      setChatDraft("");
+      setChatMessages((prev) => [...prev, data]);
+      await loadChatConversations(currentUser.id, { silent: true });
+    } catch (err) {
+      setChatMessage(err.message || "Failed to send message.");
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  const loadContracts = async (userId, options = {}) => {
+    if (!userId) return;
+    const { silent = false, q = "", status = "" } = options;
+    if (!silent) setContractsLoading(true);
+    try {
+      const params = new URLSearchParams({ user_id: String(userId), limit: "200" });
+      if (String(q || "").trim()) {
+        params.set("q", String(q).trim());
+      }
+      if (String(status || "").trim()) {
+        params.set("status", String(status).trim().toLowerCase());
+      }
+      const res = await fetch(`${API_BASE}/contracts/?${params.toString()}`);
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.detail || "Failed to load contracts");
+      setContracts(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setContractsMessage(err.message || "Failed to load contracts.");
+      setContracts([]);
+    } finally {
+      if (!silent) setContractsLoading(false);
+    }
+  };
+
+  const searchContractCounterparties = async (query) => {
+    if (!currentUser?.id) return;
+    const q = query.trim();
+    if (!q) {
+      setContractCounterparties([]);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `${API_BASE}/users/search?q=${encodeURIComponent(q)}&exclude_user_id=${currentUser.id}&limit=20`
+      );
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.detail || "Failed to search counterparties");
+      setContractCounterparties(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setContractsMessage(err.message || "Failed to search counterparties.");
+      setContractCounterparties([]);
+    }
+  };
+
+  const handleSelectContractCounterparty = (user) => {
+    if (!user?.id) return;
+    setContractForm((prev) => ({ ...prev, counterpartyUserId: String(user.id) }));
+    setContractSelectedCounterpartyName(user.username || "");
+    setContractCounterpartyQuery(user.username || "");
+  };
+
+  const handleCreateContract = async () => {
+    if (!currentUser?.id || contractsLoading) return;
+    setContractsMessage("");
+    const sellerUserId = Number(contractForm.counterpartyUserId);
+    const quantityKg = Number(contractForm.quantityKg);
+    const purityPct = Number(contractForm.purityPct);
+    const pricePerKg = Number(contractForm.pricePerKg);
+
+    if (!sellerUserId) {
+      setContractsMessage("Select a counterparty first.");
+      return;
+    }
+    if (!contractForm.assetSymbol) {
+      setContractsMessage("Select a commodity symbol.");
+      return;
+    }
+    if (!Number.isFinite(quantityKg) || quantityKg <= 0) {
+      setContractsMessage("Enter a valid quantity in kg.");
+      return;
+    }
+    if (!Number.isFinite(purityPct) || purityPct <= 0 || purityPct > 100) {
+      setContractsMessage("Purity must be between 0 and 100.");
+      return;
+    }
+    if (!Number.isFinite(pricePerKg) || pricePerKg <= 0) {
+      setContractsMessage("Enter a valid USD price per kg.");
+      return;
+    }
+
+    setContractsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/contracts/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          buyer_user_id: currentUser.id,
+          seller_user_id: sellerUserId,
+          asset_symbol: contractForm.assetSymbol,
+          quantity_kg: quantityKg,
+          purity_pct: purityPct,
+          price_per_kg: pricePerKg,
+          currency: "USD",
+          delivery_terms: contractForm.deliveryTerms || "CIF",
+          origin_port: contractForm.originPort || null,
+          destination_port: contractForm.destinationPort || null
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.detail || "Failed to create contract");
+      await loadContracts(currentUser.id, { silent: true });
+      setContractsMessage("Contract created and stored in Contract Suite.");
+      setContractCounterpartyQuery("");
+      setContractCounterparties([]);
+      setContractSelectedCounterpartyName("");
+      setContractForm((prev) => ({ ...prev, counterpartyUserId: "", quantityKg: "1000", purityPct: "99.5", pricePerKg: "50" }));
+    } catch (err) {
+      setContractsMessage(err.message || "Failed to create contract.");
+    } finally {
+      setContractsLoading(false);
+    }
+  };
+
+  const loadContractEvents = async (contractId) => {
+    try {
+      const res = await fetch(`${API_BASE}/contracts/${contractId}/events`);
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.detail || "Failed to load contract events");
+      setContractEventsById((prev) => ({ ...prev, [contractId]: Array.isArray(data) ? data : [] }));
+    } catch (err) {
+      setContractsMessage(err.message || "Failed to load contract events.");
+    }
+  };
+
+  const handleContractStatusUpdate = async (contractId, eventType, status, note) => {
+    if (!currentUser?.id) return;
+    setContractsMessage("");
+    try {
+      const res = await fetch(`${API_BASE}/contracts/${contractId}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actor_user_id: currentUser.id,
+          event_type: eventType,
+          status,
+          note
+        })
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.detail || "Failed to update contract status");
+      setContractEventsById((prev) => ({ ...prev, [contractId]: Array.isArray(data) ? data : [] }));
+      await loadContracts(currentUser.id, { silent: true });
+    } catch (err) {
+      setContractsMessage(err.message || "Failed to update contract status.");
+    }
+  };
+
+  const loadShipments = async (userId, options = {}) => {
+    if (!userId) return;
+    const { silent = false } = options;
+    if (!silent) setShipmentsLoading(true);
+    try {
+      const params = new URLSearchParams({ user_id: String(userId), limit: "200" });
+      const res = await fetch(`${API_BASE}/shipments/?${params.toString()}`);
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.detail || "Failed to load shipments");
+      setShipments(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setShipmentsMessage(err.message || "Failed to load shipments.");
+      setShipments([]);
+    } finally {
+      if (!silent) setShipmentsLoading(false);
+    }
+  };
+
+  const loadShipmentEvents = async (shipmentId) => {
+    try {
+      const res = await fetch(`${API_BASE}/shipments/${shipmentId}/events`);
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.detail || "Failed to load shipment events");
+      setShipmentEventsById((prev) => ({ ...prev, [shipmentId]: Array.isArray(data) ? data : [] }));
+    } catch (err) {
+      setShipmentsMessage(err.message || "Failed to load shipment events.");
+    }
+  };
+
+  const handleCreateShipmentFromContract = async (contractId) => {
+    if (!currentUser?.id || shipmentsLoading) return;
+    setShipmentsMessage("");
+    setShipmentsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/shipments/from-contract/${contractId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ created_by_user_id: currentUser.id })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.detail || "Failed to create shipment");
+      await loadShipments(currentUser.id, { silent: true });
+      await loadShipmentEvents(data.id);
+      setShipmentsMessage("Shipment record created.");
+    } catch (err) {
+      setShipmentsMessage(err.message || "Failed to create shipment.");
+    } finally {
+      setShipmentsLoading(false);
+    }
+  };
+
+  const handleShipmentStatusUpdate = async (shipmentId, status, description) => {
+    if (!currentUser?.id) return;
+    setShipmentsMessage("");
+    try {
+      const res = await fetch(`${API_BASE}/shipments/${shipmentId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actor_user_id: currentUser.id,
+          status,
+          description
+        })
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.detail || "Failed to update shipment");
+      setShipmentEventsById((prev) => ({ ...prev, [shipmentId]: Array.isArray(data) ? data : [] }));
+      await loadShipments(currentUser.id, { silent: true });
+    } catch (err) {
+      setShipmentsMessage(err.message || "Failed to update shipment.");
+    }
+  };
+
+  const loadFreightDeskData = async (filters, options = {}) => {
+    const { silent = false } = options;
+    if (!silent) setFreightLoading(true);
+    setFreightMessage("");
+    try {
+      const [portsRes, ratesRes] = await Promise.all([
+        fetch(`${API_BASE}/freight/ports`),
+        fetch(`${API_BASE}/freight/rates?origin_port=${filters.originPort}&destination_port=${filters.destinationPort}`)
+      ]);
+
+      const portsData = await portsRes.json().catch(() => []);
+      const ratesData = await ratesRes.json().catch(() => []);
+      if (!portsRes.ok) throw new Error(portsData?.detail || "Failed to load ports");
+      if (!ratesRes.ok) throw new Error(ratesData?.detail || "Failed to load freight rates");
+
+      setFreightPorts(Array.isArray(portsData) ? portsData : []);
+      setFreightRates(Array.isArray(ratesData) ? ratesData : []);
+
+      const tons = Number(filters.cargoTons);
+      if (Number.isFinite(tons) && tons > 0 && filters.originPort && filters.destinationPort) {
+        const vesselsRes = await fetch(
+          `${API_BASE}/freight/vessels/eligible?origin_port=${filters.originPort}&destination_port=${filters.destinationPort}&cargo_tons=${tons}`
+        );
+        const vesselsData = await vesselsRes.json().catch(() => []);
+        if (!vesselsRes.ok) throw new Error(vesselsData?.detail || "Failed to load vessel intelligence");
+        setFreightVessels(Array.isArray(vesselsData) ? vesselsData : []);
+      } else {
+        setFreightVessels([]);
+      }
+    } catch (err) {
+      setFreightMessage(err.message || "Failed to load freight desk data.");
+    } finally {
+      if (!silent) setFreightLoading(false);
+    }
+  };
+
+  const applyContractPreset = (symbol) => {
+    const key = String(symbol || "").toUpperCase();
+    const preset = contractPresetsBySymbol[key];
+    if (!preset) return;
+    setContractForm((prev) => ({
+      ...prev,
+      assetSymbol: key,
+      quantityKg: preset.quantityKg,
+      purityPct: preset.purityPct,
+      pricePerKg: preset.pricePerKg,
+      deliveryTerms: preset.deliveryTerms,
+    }));
   };
 
   const selectedAsset = useMemo(
@@ -627,6 +1096,10 @@ export default function App() {
       }),
     [watchlist, prices, livePositionsDetailed, priceFlashBySymbol]
   );
+  const watchlistInPortfolioCount = useMemo(
+    () => watchlistPulse.filter((asset) => asset.inPortfolio).length,
+    [watchlistPulse]
+  );
 
   const marketBoard = useMemo(
     () =>
@@ -643,6 +1116,115 @@ export default function App() {
 
   const recentFills = useMemo(() => fillHistory.slice(0, 5), [fillHistory]);
   const activeAlerts = useMemo(() => alerts.filter((alert) => alert.is_active), [alerts]);
+  const triggeredAlerts = useMemo(() => alerts.filter((alert) => !alert.is_active), [alerts]);
+  const shipmentByContractId = useMemo(
+    () =>
+      shipments.reduce((acc, shipment) => {
+        acc[String(shipment.contract_id)] = shipment;
+        return acc;
+      }, {}),
+    [shipments]
+  );
+  const contractsReadyForShipment = useMemo(
+    () => contracts.filter((contract) => ["signed", "active"].includes(String(contract.status).toLowerCase()) && !shipmentByContractId[String(contract.id)]),
+    [contracts, shipmentByContractId]
+  );
+  const liveShipments = useMemo(
+    () => shipments.filter((shipment) => !["delivered", "cancelled"].includes(String(shipment.status).toLowerCase())),
+    [shipments]
+  );
+  const selectedConversation = useMemo(
+    () => chatConversations.find((conversation) => String(conversation.user?.id) === String(selectedChatUser?.id)) || null,
+    [chatConversations, selectedChatUser?.id]
+  );
+  const portByCode = useMemo(
+    () =>
+      freightPorts.reduce((acc, port) => {
+        acc[port.code] = port;
+        return acc;
+      }, {}),
+    [freightPorts]
+  );
+  const cargoProgressByStatus = useMemo(
+    () => ({
+      planned: 8,
+      departed: 28,
+      in_transit: 62,
+      arrived: 90,
+      delivered: 100,
+      cancelled: 0,
+    }),
+    []
+  );
+  const liveShipmentRoutes = useMemo(
+    () =>
+      liveShipments.map((shipment) => ({
+        ...shipment,
+        progressPct: cargoProgressByStatus[String(shipment.status).toLowerCase()] ?? 12,
+        originPortMeta: portByCode[shipment.origin_port],
+        destinationPortMeta: portByCode[shipment.destination_port],
+      })),
+    [liveShipments, cargoProgressByStatus, portByCode]
+  );
+  const cargoMapFocus = useMemo(() => {
+    const preferredContract = contractsReadyForShipment[0] || contracts[0];
+    if (preferredContract) {
+      return {
+        type: "contract",
+        assetSymbol: preferredContract.asset_symbol,
+        referenceId: preferredContract.id,
+        originPort: preferredContract.origin_port,
+        destinationPort: preferredContract.destination_port,
+      };
+    }
+
+    const shipment = liveShipmentRoutes[0];
+    if (shipment) {
+      return {
+        type: "shipment",
+        assetSymbol: shipment.asset_symbol,
+        referenceId: shipment.id,
+        originPort: shipment.origin_port,
+        destinationPort: shipment.destination_port,
+      };
+    }
+    return null;
+  }, [contractsReadyForShipment, contracts, liveShipmentRoutes]);
+
+  const cargoMapPoints = useMemo(() => {
+    if (!cargoMapFocus) return [];
+    const origin = portByCode[cargoMapFocus.originPort];
+    const destination = portByCode[cargoMapFocus.destinationPort];
+    if (
+      !origin ||
+      !destination ||
+      origin.latitude == null ||
+      origin.longitude == null ||
+      destination.latitude == null ||
+      destination.longitude == null
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        key: "origin-port",
+        role: "mine",
+        label: `Origin Port · ${origin.code}`,
+        latlng: [Number(origin.latitude), Number(origin.longitude)],
+      },
+      {
+        key: "destination-port",
+        role: "factory",
+        label: `Destination Port · ${destination.code}`,
+        latlng: [Number(destination.latitude), Number(destination.longitude)],
+      },
+    ];
+  }, [cargoMapFocus, portByCode]);
+  const cargoMapBounds = useMemo(() => {
+    if (!cargoMapPoints.length) return null;
+    return cargoMapPoints.map((port) => port.latlng);
+  }, [cargoMapPoints]);
   const lastAccountSyncLabel = useMemo(
     () =>
       lastAccountSyncAt
@@ -654,6 +1236,69 @@ export default function App() {
         : "—",
     [lastAccountSyncAt]
   );
+  const globalStatusItems = useMemo(() => {
+    const items = [
+      {
+        key: "market",
+        label: "Market",
+        state: pricesStreamStale ? "stale" : pricesStreamState,
+        detail: `Last tick ${
+          lastPricesTickAt
+            ? new Date(lastPricesTickAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              })
+            : "—"
+        }`,
+      },
+      {
+        key: "account",
+        label: "Account",
+        state: accountSyncState === "syncing" ? "connecting" : accountSyncState,
+        detail: `Last sync ${lastAccountSyncLabel}`,
+      },
+    ];
+
+    if (page === "contracts") {
+      items.push({
+        key: "contracts-db",
+        label: "Contracts DB",
+        state: contractsLoading ? "connecting" : "live",
+        detail: contractsLoading ? "Refreshing" : "Fresh every 4s",
+      });
+    }
+
+    if (page === "cargo") {
+      items.push({
+        key: "cargo-db",
+        label: "Cargo DB",
+        state: shipmentsLoading ? "connecting" : "live",
+        detail: shipmentsLoading ? "Refreshing" : "Fresh every 4s",
+      });
+    }
+
+    if (page === "freight") {
+      items.push({
+        key: "freight-db",
+        label: "Freight DB",
+        state: freightLoading ? "connecting" : "live",
+        detail: freightLoading ? "Refreshing" : "Fresh every 6s",
+      });
+    }
+
+    return items;
+  }, [
+    pricesStreamStale,
+    pricesStreamState,
+    lastPricesTickAt,
+    accountSyncState,
+    lastAccountSyncLabel,
+    page,
+    contractsLoading,
+    shipmentsLoading,
+    freightLoading,
+  ]);
 
   const tradeQuantityNumber = Number(tradeQuantity);
   const hasValidTradeQuantity = Number.isFinite(tradeQuantityNumber) && tradeQuantityNumber > 0;
@@ -670,6 +1315,8 @@ export default function App() {
   const estimatedNotional = hasValidTradeQuantity && safeHeaderPrice ? tradeQuantityNumber * safeHeaderPrice : 0;
   const estimatedFee = estimatedNotional * TRADING_FEE_RATE;
   const estimatedTotalBuyCost = estimatedNotional + estimatedFee;
+  const chatDraftLength = chatDraft.trim().length;
+  const chatCanSend = Boolean(selectedChatUser) && !chatSending && chatDraftLength > 0;
 
   const setTradeQuantityValue = (value) => {
     if (!Number.isFinite(value) || value <= 0) return;
@@ -688,6 +1335,150 @@ export default function App() {
     }, ACCOUNT_SYNC_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser?.id) {
+      setChatConversations([]);
+      setSelectedChatUser(null);
+      setChatMessages([]);
+      setChatSearchQuery("");
+      setChatSearchResults([]);
+      setContracts([]);
+      setContractEventsById({});
+      setContractSearchQuery("");
+      setContractStatusFilter("all");
+      setContractCounterpartyQuery("");
+      setContractCounterparties([]);
+      setContractSelectedCounterpartyName("");
+      setShipments([]);
+      setShipmentEventsById({});
+      setFreightPorts([]);
+      setFreightRates([]);
+      setFreightVessels([]);
+      return;
+    }
+    loadChatConversations(currentUser.id, { silent: true });
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!assets.length) return;
+    setContractForm((prev) => {
+      if (prev.assetSymbol) return prev;
+      return { ...prev, assetSymbol: assets[0].symbol };
+    });
+  }, [assets]);
+
+  useEffect(() => {
+    if (page !== "chat" || !currentUser?.id) return;
+    loadChatConversations(currentUser.id, { silent: false });
+  }, [page, currentUser?.id]);
+
+  useEffect(() => {
+    if (page !== "chat" || !currentUser?.id || !selectedChatUser?.id) return;
+    loadChatMessages(currentUser.id, selectedChatUser.id, { silent: false });
+  }, [page, currentUser?.id, selectedChatUser?.id]);
+
+  useEffect(() => {
+    if (page !== "chat" || !currentUser?.id) return;
+    const timer = setInterval(() => {
+      loadChatConversations(currentUser.id, { silent: true });
+      if (selectedChatUser?.id) {
+        loadChatMessages(currentUser.id, selectedChatUser.id, { silent: true });
+      }
+    }, 3500);
+    return () => clearInterval(timer);
+  }, [page, currentUser?.id, selectedChatUser?.id]);
+
+  useEffect(() => {
+    if (page !== "chat") return;
+    const timer = setTimeout(() => {
+      handleChatSearch(chatSearchQuery);
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [chatSearchQuery, page]);
+
+  useEffect(() => {
+    if (page !== "contracts" || !currentUser?.id) return;
+    loadContracts(currentUser.id, {
+      silent: false,
+      q: contractSearchQuery,
+      status: contractStatusFilter === "all" ? "" : contractStatusFilter,
+    });
+    if (!freightPorts.length) {
+      loadFreightDeskData(freightFilters, { silent: true });
+    }
+  }, [page, currentUser?.id]);
+
+  useEffect(() => {
+    if (page !== "contracts" || !currentUser?.id) return;
+    const timer = setTimeout(() => {
+      loadContracts(currentUser.id, {
+        silent: true,
+        q: contractSearchQuery,
+        status: contractStatusFilter === "all" ? "" : contractStatusFilter,
+      });
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [page, currentUser?.id, contractSearchQuery, contractStatusFilter]);
+
+  useEffect(() => {
+    if (page !== "contracts" || !currentUser?.id) return;
+    const timer = setInterval(() => {
+      loadContracts(currentUser.id, {
+        silent: true,
+        q: contractSearchQuery,
+        status: contractStatusFilter === "all" ? "" : contractStatusFilter,
+      });
+    }, CONTRACTS_SYNC_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [page, currentUser?.id, contractSearchQuery, contractStatusFilter]);
+
+  useEffect(() => {
+    if (page !== "cargo" || !currentUser?.id) return;
+    loadContracts(currentUser.id, { silent: false });
+    loadShipments(currentUser.id, { silent: false });
+    if (!freightPorts.length) {
+      loadFreightDeskData(freightFilters, { silent: true });
+    }
+  }, [page, currentUser?.id]);
+
+  useEffect(() => {
+    if (page !== "cargo" || !currentUser?.id) return;
+    const timer = setInterval(() => {
+      loadContracts(currentUser.id, { silent: true });
+      loadShipments(currentUser.id, { silent: true });
+    }, SHIPMENTS_SYNC_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [page, currentUser?.id]);
+
+  useEffect(() => {
+    if (page !== "freight") return;
+    loadFreightDeskData(freightFilters, { silent: false });
+  }, [page]);
+
+  useEffect(() => {
+    if (page !== "freight") return;
+    const timer = setInterval(() => {
+      loadFreightDeskData(freightFilters, { silent: true });
+    }, FREIGHT_SYNC_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [page, freightFilters.originPort, freightFilters.destinationPort, freightFilters.cargoTons]);
+
+  useEffect(() => {
+    if (page !== "contracts") return;
+    const timer = setTimeout(() => {
+      searchContractCounterparties(contractCounterpartyQuery);
+    }, 240);
+    return () => clearTimeout(timer);
+  }, [contractCounterpartyQuery, page]);
+
+  useEffect(() => {
+    if (page !== "chat") return;
+    if (!selectedChatUser?.id) return;
+    const el = chatMessagesScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [chatMessages, page, selectedChatUser?.id]);
 
   useEffect(() => {
     if (!assetId) return;
@@ -871,6 +1662,53 @@ export default function App() {
     const timer = setTimeout(() => setEquityFlash(""), 450);
     return () => clearTimeout(timer);
   }, [totalEquity]);
+
+  useEffect(() => {
+    const previousMap = previousAlertsMapRef.current;
+    if (!previousMap.size) {
+      previousAlertsMapRef.current = new Map(alerts.map((alert) => [alert.id, Boolean(alert.is_active)]));
+      return;
+    }
+
+    const now = Date.now();
+    const newTriggered = [];
+
+    for (const alert of alerts) {
+      const wasActive = previousMap.get(alert.id);
+      const isActive = Boolean(alert.is_active);
+      if (wasActive === true && !isActive) {
+        newTriggered.push({
+          id: `${alert.id}-${now}`,
+          alertId: alert.id,
+          symbol: alert.symbol,
+          condition: alert.condition,
+          targetPrice: Number(alert.target_price),
+          currentPrice: Number(alert.current_price),
+          triggeredAt: alert.triggered_at || new Date(now).toISOString()
+        });
+      }
+    }
+
+    if (newTriggered.length) {
+      setAlertToasts((prev) => [...newTriggered, ...prev].slice(0, 8));
+      setUnreadNotificationCount((prev) => prev + newTriggered.length);
+    }
+
+    previousAlertsMapRef.current = new Map(alerts.map((alert) => [alert.id, Boolean(alert.is_active)]));
+  }, [alerts]);
+
+  useEffect(() => {
+    if (!alertToasts.length) return;
+    const timer = setTimeout(() => {
+      setAlertToasts((prev) => prev.slice(0, -1));
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [alertToasts]);
+
+  useEffect(() => {
+    if (!notificationOpen) return;
+    setUnreadNotificationCount(0);
+  }, [notificationOpen]);
 
   const handleMarketClick = (asset) => {
     setAssetId(String(asset.id));
@@ -1171,14 +2009,20 @@ export default function App() {
         <header className="topbar">
           <div className="topbar-left">
             Stochastic Candlestick MVP
-            <span className={`stream-pill ${pricesStreamStale ? "stale" : pricesStreamState}`}>
-              Market: {streamLabel(pricesStreamState, pricesStreamStale)}
-            </span>
           </div>
           <input className="search" placeholder="Search" />
           <div className="top-actions">
             <button className="ghost">✦</button>
-            <button className="ghost">🔔</button>
+            <button
+              className={`ghost notification-button ${notificationOpen ? "active" : ""}`}
+              onClick={() => setNotificationOpen((prev) => !prev)}
+              title="Notifications"
+            >
+              🔔
+              {unreadNotificationCount > 0 ? (
+                <span className="notification-badge">{Math.min(unreadNotificationCount, 99)}</span>
+              ) : null}
+            </button>
             <button className="primary">Trade</button>
             <div className="profile-name">${Number(currentUser.balance || 0).toLocaleString()}</div>
             <div className="profile-name">{currentUser.username}</div>
@@ -1186,7 +2030,41 @@ export default function App() {
           </div>
         </header>
 
+        {notificationOpen ? (
+          <div className="notification-panel">
+            <div className="notification-panel-head">
+              <strong>Alert Notifications</strong>
+              <span>{alertToasts.length ? `${alertToasts.length} recent` : "No new alerts"}</span>
+            </div>
+            <div className="notification-panel-list">
+              {!alertToasts.length ? (
+                <div className="muted-block">Triggered alerts will appear here.</div>
+              ) : (
+                alertToasts.map((toast) => (
+                  <div key={toast.id} className="notification-item">
+                    <div>
+                      <strong>{toast.symbol}</strong> hit {toast.condition} {toast.targetPrice.toFixed(2)}
+                    </div>
+                    <small>
+                      Now: {Number.isFinite(toast.currentPrice) ? toast.currentPrice.toFixed(2) : "—"} · {new Date(toast.triggeredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                    </small>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : null}
+
         <main className="content">
+          <section className="status-rail" aria-label="Live system status">
+            {globalStatusItems.map((item) => (
+              <div key={item.key} className="status-rail-item">
+                <span className={`stream-pill ${item.state}`}>{item.label}: {streamLabel(item.state, item.state === "stale")}</span>
+                <small>{item.detail}</small>
+              </div>
+            ))}
+          </section>
+
           {page === "dashboard" && (
             <section className="page">
               <h2>Dashboard</h2>
@@ -1201,16 +2079,6 @@ export default function App() {
                     <button className="secondary" onClick={() => setPage("portfolio")}>View Portfolio</button>
                     <button className="ghost" onClick={() => setPage("watchlist")}>Manage Watchlist</button>
                   </div>
-                </div>
-                <div className="dashboard-hero-pill">
-                  <span>Stream</span>
-                  <strong>{streamLabel(pricesStreamState, pricesStreamStale)}</strong>
-                  <small>Last tick: {lastPricesTickAt ? new Date(lastPricesTickAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}</small>
-                </div>
-                <div className={`dashboard-hero-pill account-sync ${accountSyncState}`}>
-                  <span>Account Sync</span>
-                  <strong>{accountSyncState === "syncing" ? "Syncing" : accountSyncState === "error" ? "Delayed" : "Live"}</strong>
-                  <small>Last sync: {lastAccountSyncLabel}</small>
                 </div>
               </div>
 
@@ -1398,83 +2266,303 @@ export default function App() {
 
           {page === "watchlist" && (
             <section className="page">
-              <h2>Watchlist</h2>
-              <div className="card">
-                <div className="watchlist-actions">
-                  <button className="secondary" onClick={handleAddToWatchlist} disabled={watchlistLoading || !assetId}>
-                    {watchlistLoading ? "Updating..." : "Add Selected Asset"}
-                  </button>
+              <h2>Watchlist & Alerts</h2>
+
+              <div className="watchlist-summary-grid">
+                <div className="card dashboard-kpi-card">
+                  <span>Tracked Assets</span>
+                  <strong>{watchlistPulse.length}</strong>
+                  <small>Across your custom watchlist</small>
                 </div>
-                {watchlistMessage ? <div className="status">{watchlistMessage}</div> : null}
-                <table className="asset-table">
-                  <thead>
-                    <tr>
-                      <th>Symbol</th>
-                      <th>Name</th>
-                      <th>Live Price</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {!watchlist.length ? (
-                      <tr><td colSpan={5}>No watchlist assets yet.</td></tr>
-                    ) : (
-                      watchlist.map((asset) => {
-                        const inPortfolio = livePositionsDetailed.some((position) => String(position.asset_id) === String(asset.id));
-                        const livePrice = Number(prices[asset.symbol]);
-                        return (
-                          <tr key={asset.id}>
-                            <td>{asset.symbol}</td>
-                            <td>{asset.name}</td>
-                            <td>{Number.isFinite(livePrice) ? livePrice.toFixed(2) : "—"}</td>
-                            <td>{inPortfolio ? "In Portfolio" : "Watching"}</td>
-                            <td>
-                              <button className="ghost" onClick={() => handleMarketClick(asset)}>Open</button>
-                              <button className="ghost" onClick={() => handleRemoveFromWatchlist(asset.id)}>Remove</button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                <div className="card dashboard-kpi-card">
+                  <span>In Portfolio</span>
+                  <strong>{watchlistInPortfolioCount}</strong>
+                  <small>Watchlist assets currently held</small>
+                </div>
+                <div className="card dashboard-kpi-card">
+                  <span>Alerts</span>
+                  <strong>{activeAlerts.length} / {triggeredAlerts.length}</strong>
+                  <small>Active / Triggered</small>
+                </div>
               </div>
 
-              <div className="grid-2">
+              <div className="watchlist-layout">
                 <div className="card">
-                  <h3>Active Alerts</h3>
+                  <div className="watchlist-actions">
+                    <h3>My Watchlist</h3>
+                    <button className="secondary" onClick={handleAddToWatchlist} disabled={watchlistLoading || !assetId}>
+                      {watchlistLoading ? "Updating..." : "Add Selected Asset"}
+                    </button>
+                  </div>
+                  {watchlistMessage ? <div className="status">{watchlistMessage}</div> : null}
+                  <table className="asset-table">
+                    <thead>
+                      <tr>
+                        <th>Symbol</th>
+                        <th>Name</th>
+                        <th>Live Price</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {!watchlist.length ? (
+                        <tr><td colSpan={5}>No watchlist assets yet.</td></tr>
+                      ) : (
+                        watchlist.map((asset) => {
+                          const inPortfolio = livePositionsDetailed.some((position) => String(position.asset_id) === String(asset.id));
+                          const livePrice = Number(prices[asset.symbol]);
+                          return (
+                            <tr key={asset.id}>
+                              <td>{asset.symbol}</td>
+                              <td>{asset.name}</td>
+                              <td>{Number.isFinite(livePrice) ? livePrice.toFixed(2) : "—"}</td>
+                              <td>{inPortfolio ? "In Portfolio" : "Watching"}</td>
+                              <td className="table-actions-cell">
+                                <button className="ghost" onClick={() => handleMarketClick(asset)}>Open</button>
+                                <button className="ghost" onClick={() => handleRemoveFromWatchlist(asset.id)}>Remove</button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="card">
+                  <h3>Alert Manager</h3>
                   {alertsMessage ? <div className="status">{alertsMessage}</div> : null}
-                  <div className="table">
-                    {alerts.filter((alert) => alert.is_active).length ? (
-                      alerts
-                        .filter((alert) => alert.is_active)
-                        .map((alert) => (
-                          <div key={`active-${alert.id}`} className="cell">
-                            <span>{alert.symbol} {alert.condition} {Number(alert.target_price).toFixed(2)}</span>
-                            <button className="ghost" onClick={() => handleDeleteAlert(alert.id)}>Delete</button>
-                          </div>
+                  <div className="controls compact watchlist-alert-form">
+                    <label>
+                      Asset
+                      <select value={alertAssetId} onChange={(event) => setAlertAssetId(event.target.value)}>
+                        {assets.map((asset) => (
+                          <option key={asset.id} value={asset.id}>{asset.symbol}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Condition
+                      <select value={alertCondition} onChange={(event) => setAlertCondition(event.target.value)}>
+                        <option value="above">Above</option>
+                        <option value="below">Below</option>
+                      </select>
+                    </label>
+                    <label>
+                      Target
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={alertTargetPrice}
+                        onChange={(event) => setAlertTargetPrice(event.target.value)}
+                        placeholder="e.g. 150.00"
+                      />
+                    </label>
+                    <button className="secondary" onClick={handleCreateAlert} disabled={alertsLoading || !alertAssetId}>
+                      {alertsLoading ? "Saving..." : "Create Alert"}
+                    </button>
+                  </div>
+
+                  <div className="alerts-grid">
+                    <div className="alerts-column">
+                      <h4>Active</h4>
+                      <div className="table">
+                        {activeAlerts.length ? (
+                          activeAlerts.map((alert) => (
+                            <div key={`active-${alert.id}`} className="cell">
+                              <span>{alert.symbol} {alert.condition} {Number(alert.target_price).toFixed(2)}</span>
+                              <button className="ghost" onClick={() => handleDeleteAlert(alert.id)}>Delete</button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="muted-block">No active alerts.</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="alerts-column">
+                      <h4>Triggered</h4>
+                      <div className="table">
+                        {triggeredAlerts.length ? (
+                          triggeredAlerts.map((alert) => (
+                            <div key={`triggered-${alert.id}`} className="cell">
+                              <span>
+                                {alert.symbol} hit {Number(alert.target_price).toFixed(2)}
+                                {alert.triggered_at ? ` · ${new Date(alert.triggered_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+                              </span>
+                              <button className="ghost" onClick={() => handleReactivateAlert(alert.id)}>Reactivate</button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="muted-block">No triggered alerts.</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {page === "chat" && (
+            <section className="page">
+              <h2>User Chat</h2>
+              <p className="chat-page-subtitle">Direct-message other traders with searchable users and persistent conversation history.</p>
+              {chatMessage ? <div className="status">{chatMessage}</div> : null}
+              <div className="chat-layout">
+                <div className="card chat-sidebar">
+                  <div className="chat-sidebar-head">
+                    <h3>Conversations</h3>
+                    <span>{chatConversations.length}</span>
+                  </div>
+                  <label>
+                    Search users
+                    <input
+                      type="text"
+                      value={chatSearchQuery}
+                      onChange={(event) => setChatSearchQuery(event.target.value)}
+                      placeholder="Type username..."
+                    />
+                  </label>
+
+                  {chatSearchQuery.trim() ? (
+                    <button className="ghost chat-clear-search" onClick={() => setChatSearchQuery("")}>Clear search</button>
+                  ) : null}
+
+                  {selectedChatUser ? (
+                    <div className="chat-selected-pill">
+                      Selected: <strong>{selectedChatUser.username}</strong>
+                    </div>
+                  ) : null}
+
+                  {chatSearchQuery.trim() ? (
+                    <div className="chat-search-results">
+                      <div className="chat-section-label">Search Results</div>
+                      {chatSearchResults.length ? (
+                        chatSearchResults.map((user) => (
+                          <button
+                            key={`search-${user.id}`}
+                            className="chat-user-item"
+                            onClick={() => handleStartChatWithUser(user)}
+                          >
+                            <span>{user.username}</span>
+                            <small>Start new chat</small>
+                          </button>
                         ))
+                      ) : (
+                        <div className="muted-block">No users found.</div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  <div className="chat-conversation-list">
+                    <div className="chat-section-label">Recent</div>
+                    {!chatConversations.length ? (
+                      <div className="muted-block">
+                        {chatLoading ? "Loading conversations..." : "No conversations yet. Search users above."}
+                      </div>
                     ) : (
-                      <div className="muted-block">No active alerts.</div>
+                      chatConversations.map((conversation) => (
+                        <button
+                          key={`conv-${conversation.user.id}`}
+                          className={`chat-user-item ${selectedChatUser?.id === conversation.user.id ? "active" : ""}`}
+                          onClick={() => {
+                            setChatMessage("");
+                            setSelectedChatUser(conversation.user);
+                          }}
+                        >
+                          <div className="chat-user-item-head">
+                            <span>{conversation.user.username}</span>
+                            <small>
+                              {new Date(conversation.last_message_at).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit"
+                              })}
+                            </small>
+                          </div>
+                          <small>
+                            {conversation.last_message_sender_id === currentUser.id ? "You: " : ""}
+                            {conversation.last_message.slice(0, 48)}
+                          </small>
+                        </button>
+                      ))
                     )}
                   </div>
                 </div>
-                <div className="card">
-                  <h3>Triggered Alerts</h3>
-                  <div className="table">
-                    {alerts.filter((alert) => !alert.is_active).length ? (
-                      alerts
-                        .filter((alert) => !alert.is_active)
-                        .map((alert) => (
-                          <div key={`triggered-${alert.id}`} className="cell">
-                            <span>{alert.symbol} hit {Number(alert.target_price).toFixed(2)}</span>
-                            <button className="ghost" onClick={() => handleReactivateAlert(alert.id)}>Reactivate</button>
-                          </div>
-                        ))
+
+                <div className="card chat-main">
+                  <div className="chat-header-row">
+                    <div>
+                      <h3>{selectedChatUser ? `Chat with ${selectedChatUser.username}` : "Select a conversation"}</h3>
+                      {selectedConversation?.last_message_at ? (
+                        <div className="chat-header-meta">
+                          Last message {new Date(selectedConversation.last_message_at).toLocaleString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            month: "short",
+                            day: "numeric"
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                    <span className={`stream-pill ${chatLoading ? "connecting" : "live"}`}>
+                      {chatLoading ? "Refreshing..." : "Auto refresh 3.5s"}
+                    </span>
+                  </div>
+
+                  <div className="chat-messages-scroll" ref={chatMessagesScrollRef}>
+                    {!selectedChatUser ? (
+                      <div className="chat-empty-state">
+                        <strong>No chat selected</strong>
+                        <span>Choose a user from search or recent conversations to begin messaging.</span>
+                      </div>
+                    ) : !chatMessages.length ? (
+                      <div className="chat-empty-state">
+                        <strong>No messages yet</strong>
+                        <span>Send the first message to start this conversation.</span>
+                      </div>
                     ) : (
-                      <div className="muted-block">No triggered alerts.</div>
+                      chatMessages.map((message) => {
+                        const mine = Number(message.sender_user_id) === Number(currentUser.id);
+                        const authorName = mine ? "You" : selectedChatUser?.username || "Counterparty";
+                        return (
+                          <div key={message.id} className={`chat-bubble-row ${mine ? "mine" : "theirs"}`}>
+                            <div className={`chat-bubble ${mine ? "mine" : "theirs"}`}>
+                              <div className="chat-bubble-meta">
+                                <span>{authorName}</span>
+                                <small>{new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small>
+                              </div>
+                              <p className="chat-bubble-text">{message.message}</p>
+                            </div>
+                          </div>
+                        );
+                      })
                     )}
+                  </div>
+
+                  <div className="chat-compose-row">
+                    <textarea
+                      value={chatDraft}
+                      onChange={(event) => setChatDraft(event.target.value)}
+                      placeholder={selectedChatUser ? `Message ${selectedChatUser.username}...` : "Select a user to start typing"}
+                      disabled={!selectedChatUser || chatSending}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          handleSendChatMessage();
+                        }
+                      }}
+                    />
+                    <div className="chat-compose-actions">
+                      <small>{chatDraftLength}/2000</small>
+                      <button
+                        className="primary"
+                        onClick={handleSendChatMessage}
+                        disabled={!chatCanSend}
+                      >
+                        {chatSending ? "Sending..." : "Send"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1658,35 +2746,597 @@ export default function App() {
             </section>
           )}
 
-          {page === "copy" && (
+          {page === "contracts" && (
             <section className="page">
-              <h2>Copy Traders</h2>
-              <div className="grid-3">
-                <div className="card trader-card">
-                  <h3>Trader Alpha</h3>
-                  <p>Return 18% · Risk 4</p>
-                  <button className="primary">Copy Trader</button>
+              <h2>Contract Suite</h2>
+              <p className="chat-page-subtitle">Digitize deal paperwork with structured contracts, signatures, and audit events.</p>
+              {contractsMessage ? <div className="status">{contractsMessage}</div> : null}
+              <div className="grid-2">
+                <div className="card">
+                  <h3>Create Contract</h3>
+                  <div className="controls compact contract-form-grid">
+                    <label>
+                      Counterparty search
+                      <input
+                        value={contractCounterpartyQuery}
+                        onChange={(event) => setContractCounterpartyQuery(event.target.value)}
+                        placeholder="Search username..."
+                      />
+                    </label>
+                    <div className="contract-counterparty-results" role="listbox" aria-label="Counterparty search results">
+                      {contractCounterparties.map((user) => (
+                        <button
+                          key={`counterparty-search-${user.id}`}
+                          type="button"
+                          className={`contract-counterparty-item ${String(contractForm.counterpartyUserId) === String(user.id) ? "active" : ""}`}
+                          onClick={() => handleSelectContractCounterparty(user)}
+                        >
+                          <span>{user.username}</span>
+                          <small>User #{user.id}</small>
+                        </button>
+                      ))}
+                      {contractCounterpartyQuery.trim() && !contractCounterparties.length ? (
+                        <div className="muted-block">No users found for this search.</div>
+                      ) : null}
+                    </div>
+                    <label>
+                      Counterparty
+                      <select
+                        value={contractForm.counterpartyUserId}
+                        onChange={(event) => {
+                          const nextUserId = event.target.value;
+                          const selectedUser = contractCounterparties.find(
+                            (user) => String(user.id) === String(nextUserId)
+                          );
+                          setContractForm((prev) => ({ ...prev, counterpartyUserId: nextUserId }));
+                          if (selectedUser?.username) {
+                            setContractSelectedCounterpartyName(selectedUser.username);
+                          }
+                        }}
+                      >
+                        <option value="">Select user</option>
+                        {contractForm.counterpartyUserId &&
+                        !contractCounterparties.some(
+                          (user) => String(user.id) === String(contractForm.counterpartyUserId)
+                        ) ? (
+                          <option value={contractForm.counterpartyUserId}>
+                            {contractSelectedCounterpartyName || `User #${contractForm.counterpartyUserId}`}
+                          </option>
+                        ) : null}
+                        {contractCounterparties.map((user) => (
+                          <option key={`counterparty-${user.id}`} value={user.id}>{user.username}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {contractForm.counterpartyUserId ? (
+                      <div className="contract-counterparty-selected">
+                        Selected: <strong>{contractSelectedCounterpartyName || `User #${contractForm.counterpartyUserId}`}</strong>
+                      </div>
+                    ) : null}
+                    <label>
+                      Mineral
+                      <select
+                        value={contractForm.assetSymbol}
+                        onChange={(event) => {
+                          const nextSymbol = event.target.value;
+                          setContractForm((prev) => ({ ...prev, assetSymbol: nextSymbol }));
+                          applyContractPreset(nextSymbol);
+                        }}
+                      >
+                        {assets.map((asset) => (
+                          <option key={`contract-symbol-${asset.id}`} value={asset.symbol}>{asset.symbol}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Quantity (kg)
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={contractForm.quantityKg}
+                        onChange={(event) => setContractForm((prev) => ({ ...prev, quantityKg: event.target.value }))}
+                      />
+                    </label>
+                    <label>
+                      Purity (%)
+                      <input
+                        type="number"
+                        min="0.01"
+                        max="100"
+                        step="0.01"
+                        value={contractForm.purityPct}
+                        onChange={(event) => setContractForm((prev) => ({ ...prev, purityPct: event.target.value }))}
+                      />
+                    </label>
+                    <label>
+                      Price (USD/kg)
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={contractForm.pricePerKg}
+                        onChange={(event) => setContractForm((prev) => ({ ...prev, pricePerKg: event.target.value }))}
+                      />
+                    </label>
+                    <label>
+                      Delivery Terms
+                      <select
+                        value={contractForm.deliveryTerms}
+                        onChange={(event) => setContractForm((prev) => ({ ...prev, deliveryTerms: event.target.value }))}
+                      >
+                        <option value="CIF">CIF</option>
+                        <option value="FOB">FOB</option>
+                        <option value="DAP">DAP</option>
+                        <option value="EXW">EXW</option>
+                      </select>
+                    </label>
+                    <label>
+                      Preset
+                      <select
+                        value={contractForm.assetSymbol}
+                        onChange={(event) => applyContractPreset(event.target.value)}
+                      >
+                        {Object.keys(contractPresetsBySymbol).map((symbol) => (
+                          <option key={`preset-${symbol}`} value={symbol}>{symbol} preset</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Origin Port
+                      <select
+                        value={contractForm.originPort}
+                        onChange={(event) => setContractForm((prev) => ({ ...prev, originPort: event.target.value }))}
+                      >
+                        {(freightPorts.length ? freightPorts : [{ code: "NLRTM", name: "Rotterdam" }]).map((port) => (
+                          <option key={`origin-port-${port.code}`} value={port.code}>{port.code} · {port.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Destination Port
+                      <select
+                        value={contractForm.destinationPort}
+                        onChange={(event) => setContractForm((prev) => ({ ...prev, destinationPort: event.target.value }))}
+                      >
+                        {(freightPorts.length ? freightPorts : [{ code: "SGSIN", name: "Singapore" }]).map((port) => (
+                          <option key={`destination-port-${port.code}`} value={port.code}>{port.code} · {port.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <button className="primary" onClick={handleCreateContract} disabled={contractsLoading}>
+                    {contractsLoading ? "Saving..." : "Create Contract"}
+                  </button>
                 </div>
-                <div className="card trader-card">
-                  <h3>Trader Nova</h3>
-                  <p>Return 24% · Risk 6</p>
-                  <button className="primary">Copy Trader</button>
-                </div>
-                <div className="card trader-card">
-                  <h3>Trader Pulse</h3>
-                  <p>Return 12% · Risk 3</p>
-                  <button className="primary">Copy Trader</button>
+
+                <div className="card">
+                  <h3>Contract Repository</h3>
+                  <div className="controls compact contract-search-row">
+                    <label>
+                      Search contracts
+                      <input
+                        value={contractSearchQuery}
+                        onChange={(event) => setContractSearchQuery(event.target.value)}
+                        placeholder="ID, symbol, user, or port"
+                      />
+                    </label>
+                    <label>
+                      Status
+                      <select
+                        value={contractStatusFilter}
+                        onChange={(event) => setContractStatusFilter(event.target.value)}
+                      >
+                        <option value="all">All</option>
+                        <option value="draft">Draft</option>
+                        <option value="in_review">In Review</option>
+                        <option value="signed">Signed</option>
+                        <option value="active">Active</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </label>
+                    <button
+                      className="ghost"
+                      onClick={() => {
+                        setContractSearchQuery("");
+                        setContractStatusFilter("all");
+                      }}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                  {!contracts.length ? (
+                    <div className="muted-block">No contracts match these filters yet.</div>
+                  ) : (
+                    <div className="contracts-list">
+                      {contracts.map((contract) => {
+                        const iAmBuyer = Number(contract.buyer_user_id) === Number(currentUser.id);
+                        const iSigned = iAmBuyer ? Boolean(contract.buyer_signed_at) : Boolean(contract.seller_signed_at);
+                        const counterpartySigned = iAmBuyer
+                          ? Boolean(contract.seller_signed_at)
+                          : Boolean(contract.buyer_signed_at);
+                        const bothSigned = Boolean(contract.buyer_signed_at) && Boolean(contract.seller_signed_at);
+                        const statusLower = String(contract.status).toLowerCase();
+                        const signingLocked = ["cancelled", "delivered", "completed"].includes(statusLower);
+                        const hasShipment = Boolean(shipmentByContractId[String(contract.id)]);
+                        return (
+                          <div key={`contract-${contract.id}`} className="contract-item">
+                            <div className="contract-item-head">
+                              <strong>{contract.asset_symbol} · {Number(contract.quantity_kg).toLocaleString()}kg</strong>
+                              <span className="stream-pill live">{contract.status}</span>
+                            </div>
+                            <div className="muted-block">
+                              {contract.buyer_username} ↔ {contract.seller_username} · Purity {Number(contract.purity_pct).toFixed(2)}% · ${Number(contract.price_per_kg).toFixed(2)}/kg
+                            </div>
+                            <div className="contract-signature-row">
+                              <span className={contract.buyer_signed_at ? "positive" : ""}>
+                                Buyer {contract.buyer_signed_at ? "signed" : "pending"}
+                              </span>
+                              <span className={contract.seller_signed_at ? "positive" : ""}>
+                                Seller {contract.seller_signed_at ? "signed" : "pending"}
+                              </span>
+                            </div>
+                            <div className="contract-item-actions">
+                              <button
+                                className="ghost"
+                                onClick={() => handleContractStatusUpdate(contract.id, "sign", null, iAmBuyer ? "Buyer signed digitally" : "Seller signed digitally")}
+                                disabled={iSigned || signingLocked}
+                              >
+                                {bothSigned ? "Fully Signed" : iSigned ? "Signed by You" : counterpartySigned ? "Counterparty Signed" : "Sign"}
+                              </button>
+                              {contract.pdf_url ? (
+                                <button
+                                  className="ghost"
+                                  onClick={() => window.open(`${API_BASE}${contract.pdf_url}`, "_blank", "noopener,noreferrer")}
+                                >
+                                  PDF
+                                </button>
+                              ) : null}
+                              <button
+                                className="ghost"
+                                onClick={() => handleContractStatusUpdate(contract.id, "amendment", "in_review", "Amendment requested")}
+                              >
+                                Amend
+                              </button>
+                              <button className="ghost" onClick={() => loadContractEvents(contract.id)}>View Audit</button>
+                              {!hasShipment && ["signed", "active"].includes(String(contract.status).toLowerCase()) ? (
+                                <button className="secondary" onClick={() => handleCreateShipmentFromContract(contract.id)}>Create Shipment</button>
+                              ) : null}
+                            </div>
+                            {contractEventsById[contract.id]?.length ? (
+                              <div className="contract-event-list">
+                                {contractEventsById[contract.id].slice(-4).map((event) => (
+                                  <div key={`contract-event-${event.id}`} className="contract-event-row">
+                                    <span>{event.actor_username} · {event.event_type}</span>
+                                    <small>{new Date(event.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </section>
           )}
 
-          {page === "feed" && (
+          {page === "cargo" && (
             <section className="page">
-              <h2>News & Feed</h2>
+              <h2>Live Cargo</h2>
+              <p className="chat-page-subtitle">Track each facilitated shipment leg from origin port to destination port with live status updates.</p>
+              {shipmentsMessage ? <div className="status">{shipmentsMessage}</div> : null}
+              <div className="dashboard-kpis">
+                <div className="card dashboard-kpi-card">
+                  <span>Contracts Ready</span>
+                  <strong>{contractsReadyForShipment.length}</strong>
+                  <small>Signed contracts without shipment</small>
+                </div>
+                <div className="card dashboard-kpi-card">
+                  <span>Active Shipments</span>
+                  <strong>{liveShipments.length}</strong>
+                  <small>In motion across routes</small>
+                </div>
+                <div className="card dashboard-kpi-card">
+                  <span>Total Shipment Records</span>
+                  <strong>{shipments.length}</strong>
+                  <small>Historical + current</small>
+                </div>
+                <div className="card dashboard-kpi-card">
+                  <span>Data Sync</span>
+                  <strong>{shipmentsLoading ? "Refreshing" : "Live"}</strong>
+                  <small>Auto refresh every 4s</small>
+                </div>
+              </div>
+
+              <div className="card cargo-map-card">
+                <div className="cargo-map-head">
+                  <h3>Origin ↔ Destination Ports Map</h3>
+                  <span className="cargo-map-subtitle">No ship yet · pre-departure view</span>
+                </div>
+                {!cargoMapPoints.length ? (
+                  <div className="muted-block">No port coordinate pair available yet. Add origin/destination ports to a contract.</div>
+                ) : (
+                  <div className="cargo-map-wrap">
+                    <MapContainer
+                      className="cargo-leaflet-map"
+                      center={[20, 0]}
+                      zoom={2}
+                      scrollWheelZoom={false}
+                      attributionControl={true}
+                      bounds={cargoMapBounds || undefined}
+                      maxBounds={[
+                        [-85, -180],
+                        [85, 180],
+                      ]}
+                      maxBoundsViscosity={0.8}
+                    >
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      {cargoMapPoints.length === 2 ? (
+                        <Polyline
+                          positions={[cargoMapPoints[0].latlng, cargoMapPoints[1].latlng]}
+                          pathOptions={{ color: "#5c7aff", weight: 2, dashArray: "6 6", opacity: 0.9 }}
+                        />
+                      ) : null}
+                      {cargoMapPoints.map((port) => (
+                        <CircleMarker
+                          key={`port-dot-${port.key}`}
+                          center={port.latlng}
+                          radius={7}
+                          pathOptions={{
+                            color: port.role === "mine" ? "#f5c26b" : "#16d4a0",
+                            fillColor: port.role === "mine" ? "#f5c26b" : "#16d4a0",
+                            fillOpacity: 0.9,
+                            weight: 2,
+                          }}
+                        >
+                          <Tooltip direction="right" offset={[10, -6]} permanent className={`cargo-leaflet-label ${port.role}`}>
+                            {port.label}
+                          </Tooltip>
+                        </CircleMarker>
+                      ))}
+                    </MapContainer>
+                    <div className="cargo-map-legend">
+                      <div className="cargo-map-legend-item">
+                        <span className="cargo-status-dot mine" />
+                        <span>Origin port</span>
+                      </div>
+                      <div className="cargo-map-legend-item">
+                        <span className="cargo-status-dot factory" />
+                        <span>Destination port</span>
+                      </div>
+                      {cargoMapFocus ? (
+                        <div className="cargo-map-legend-item">
+                          <span className="cargo-status-dot neutral" />
+                          <span>
+                            {cargoMapFocus.assetSymbol} · {cargoMapFocus.type === "contract" ? "Contract" : "Shipment"} #{cargoMapFocus.referenceId}
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid-2">
+                <div className="card">
+                  <h3>Route Progress Board</h3>
+                  {!liveShipmentRoutes.length ? (
+                    <div className="muted-block">No live shipment routes available yet.</div>
+                  ) : (
+                    <div className="contracts-list">
+                      {liveShipmentRoutes.map((shipment) => (
+                        <div key={`route-${shipment.id}`} className="route-progress-card">
+                          <div className="route-progress-head">
+                            <strong>{shipment.asset_symbol} · Shipment #{shipment.id}</strong>
+                            <span>{shipment.progressPct}%</span>
+                          </div>
+                          <div className="route-progress-track">
+                            <div className="route-progress-fill" style={{ width: `${shipment.progressPct}%` }} />
+                          </div>
+                          <div className="route-progress-meta">
+                            <span>
+                              {shipment.origin_port}
+                              {shipment.originPortMeta?.latitude != null && shipment.originPortMeta?.longitude != null
+                                ? ` (${Number(shipment.originPortMeta.latitude).toFixed(2)}, ${Number(shipment.originPortMeta.longitude).toFixed(2)})`
+                                : ""}
+                            </span>
+                            <span>
+                              {shipment.destination_port}
+                              {shipment.destinationPortMeta?.latitude != null && shipment.destinationPortMeta?.longitude != null
+                                ? ` (${Number(shipment.destinationPortMeta.latitude).toFixed(2)}, ${Number(shipment.destinationPortMeta.longitude).toFixed(2)})`
+                                : ""}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="card">
+                  <h3>Ready to Dispatch</h3>
+                  {!contractsReadyForShipment.length ? (
+                    <div className="muted-block">No signed contracts waiting for shipment setup.</div>
+                  ) : (
+                    <div className="table">
+                      {contractsReadyForShipment.map((contract) => (
+                        <div key={`dispatch-${contract.id}`} className="cell">
+                          <span>{contract.asset_symbol} · {Number(contract.quantity_kg).toLocaleString()}kg · {contract.origin_port}→{contract.destination_port}</span>
+                          <button className="secondary" onClick={() => handleCreateShipmentFromContract(contract.id)}>Create Shipment</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="card">
+                  <h3>Shipment Ledger</h3>
+                  {!shipments.length ? (
+                    <div className="muted-block">No shipment records yet.</div>
+                  ) : (
+                    <div className="contracts-list">
+                      {shipments.map((shipment) => (
+                        <div key={`shipment-${shipment.id}`} className="contract-item">
+                          <div className="contract-item-head">
+                            <strong>Shipment #{shipment.id} · {shipment.asset_symbol}</strong>
+                            <span className="stream-pill live">{shipment.status}</span>
+                          </div>
+                          <div className="muted-block">
+                            Contract #{shipment.contract_id} · {shipment.origin_port} → {shipment.destination_port}
+                            {shipment.eta ? ` · ETA ${new Date(shipment.eta).toLocaleString()}` : ""}
+                          </div>
+                          <div className="contract-item-actions">
+                            <button className="ghost" onClick={() => handleShipmentStatusUpdate(shipment.id, "departed", "Cargo departed origin port")}>Departed</button>
+                            <button className="ghost" onClick={() => handleShipmentStatusUpdate(shipment.id, "in_transit", "Cargo in transit")}>In Transit</button>
+                            <button className="ghost" onClick={() => handleShipmentStatusUpdate(shipment.id, "arrived", "Arrived at destination port")}>Arrived</button>
+                            <button className="secondary" onClick={() => handleShipmentStatusUpdate(shipment.id, "delivered", "Delivery confirmed by receiving facility")}>Delivered</button>
+                            <button className="ghost" onClick={() => loadShipmentEvents(shipment.id)}>Timeline</button>
+                          </div>
+                          {shipmentEventsById[shipment.id]?.length ? (
+                            <div className="contract-event-list">
+                              {shipmentEventsById[shipment.id].slice(-5).map((event) => (
+                                <div key={`shipment-event-${event.id}`} className="contract-event-row">
+                                  <span>{event.event_type}{event.description ? ` · ${event.description}` : ""}</span>
+                                  <small>{new Date(event.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {page === "freight" && (
+            <section className="page">
+              <h2>Freight Desk</h2>
+              <p className="chat-page-subtitle">Port constraint checks, vessel eligibility filtering, and freight-rate visibility for bulk mineral routes.</p>
+              {freightMessage ? <div className="status">{freightMessage}</div> : null}
+
               <div className="card">
-                <div className="feed-item">@lucas · +12% monthly return · “Tech rally continues.”</div>
-                <div className="feed-item">@hana · +8% monthly return · “Crypto momentum is strong.”</div>
+                <h3>Route Intelligence Query</h3>
+                <div className="controls compact freight-form-grid">
+                  <label>
+                    Origin Port
+                    <select
+                      value={freightFilters.originPort}
+                      onChange={(event) => setFreightFilters((prev) => ({ ...prev, originPort: event.target.value }))}
+                    >
+                      {freightPorts.map((port) => (
+                        <option key={`freight-origin-${port.code}`} value={port.code}>{port.code} · {port.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Destination Port
+                    <select
+                      value={freightFilters.destinationPort}
+                      onChange={(event) => setFreightFilters((prev) => ({ ...prev, destinationPort: event.target.value }))}
+                    >
+                      {freightPorts.map((port) => (
+                        <option key={`freight-destination-${port.code}`} value={port.code}>{port.code} · {port.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Cargo (tons)
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={freightFilters.cargoTons}
+                      onChange={(event) => setFreightFilters((prev) => ({ ...prev, cargoTons: event.target.value }))}
+                    />
+                  </label>
+                  <button className="primary" onClick={() => loadFreightDeskData(freightFilters, { silent: false })} disabled={freightLoading}>
+                    {freightLoading ? "Evaluating..." : "Evaluate Route"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid-2">
+                <div className="card">
+                  <h3>Indicative Freight Rates</h3>
+                  {!freightRates.length ? (
+                    <div className="muted-block">No stored rate for selected route yet.</div>
+                  ) : (
+                    <div className="table">
+                      {freightRates.map((rate, index) => (
+                        <div key={`freight-rate-${index}`} className="cell">
+                          <span>{rate.origin_port} → {rate.destination_port}</span>
+                          <strong>${Number(rate.usd_per_ton).toFixed(2)} / ton</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="card">
+                  <h3>Vessel Eligibility</h3>
+                  {!freightVessels.length ? (
+                    <div className="muted-block">Run route query to evaluate vessels.</div>
+                  ) : (
+                    <table className="asset-table">
+                      <thead>
+                        <tr>
+                          <th>Vessel</th>
+                          <th>Class</th>
+                          <th>Capacity</th>
+                          <th>Eligibility</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {freightVessels.map((vessel) => (
+                          <tr key={`vessel-${vessel.id}`}>
+                            <td>{vessel.name}</td>
+                            <td>{vessel.vessel_class}</td>
+                            <td>{Number(vessel.max_cargo_tons).toLocaleString()}t</td>
+                            <td className={vessel.eligible_for_route ? "positive" : "negative"}>
+                              {vessel.eligibility_reason}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+
+              <div className="card">
+                <h3>Port Constraint Database</h3>
+                <table className="asset-table">
+                  <thead>
+                    <tr>
+                      <th>Port</th>
+                      <th>Country</th>
+                      <th>Max Draft</th>
+                      <th>Max Beam</th>
+                      <th>Max LOA</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {freightPorts.map((port) => (
+                      <tr key={`port-${port.code}`}>
+                        <td>{port.code} · {port.name}</td>
+                        <td>{port.country}</td>
+                        <td>{Number(port.max_draft_m).toFixed(1)}m</td>
+                        <td>{Number(port.max_beam_m).toFixed(1)}m</td>
+                        <td>{Number(port.max_loa_m).toFixed(0)}m</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </section>
           )}

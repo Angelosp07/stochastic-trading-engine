@@ -26,7 +26,7 @@
 </head>
 <body>
   <h2>Live Prices <span class="muted">(WebSocket)</span></h2>
-  <div class="muted">Override with <code>?server=localhost:8000&amp;symbols=AAPL,GOOGL,TSLA</code></div>
+  <div class="muted">Override with <code>?server=localhost:8000&amp;symbols=LI2CO3,COBM,NIBQ,GALL,GERM</code></div>
   <div id="cards" class="grid"></div>
   <footer>
     Endpoint: <code>/ws/price?symbol=&lt;SYMBOL&gt;</code> (single symbol) or <code>/ws/price</code> (all symbols in one array).
@@ -36,7 +36,7 @@
     // ---------------- Configuration ----------------
     const params = new URLSearchParams(window.location.search);
     const DEFAULT_SERVER = 'localhost:8000';
-    const SYMBOLS = (params.get('symbols') || 'AAPL,GOOGL,TSLA')
+    const SYMBOLS = (params.get('symbols') || 'LI2CO3,COBM,NIBQ,GALL,GERM')
       .split(',').map(s => s.trim()).filter(Boolean);
 
     const pageProtocol = (location.protocol || '').toLowerCase();

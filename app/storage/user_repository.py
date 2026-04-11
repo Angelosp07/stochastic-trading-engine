@@ -59,6 +59,20 @@ class UserRepository:
         )
         return cursor.fetchone()
 
+    def search_users(self, query: str, exclude_user_id: int, limit: int = 10):
+        like = f"%{query.strip().lower()}%"
+        cursor = self.conn.execute(
+            """
+            SELECT id, username, balance, created_at
+            FROM users
+            WHERE id != ? AND lower(username) LIKE ?
+            ORDER BY username ASC
+            LIMIT ?
+            """,
+            (exclude_user_id, like, limit),
+        )
+        return cursor.fetchall()
+
     def get_or_create_user(self, username: str, balance: float = 100000.0):
         existing = self.get_user_by_username(username)
         if existing:

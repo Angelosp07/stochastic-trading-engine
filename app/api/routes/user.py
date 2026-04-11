@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.storage.db import db
@@ -232,6 +232,17 @@ def set_balance(user_id: int, payload: BalanceSet):
 def demo_login():
     row = user_repo.get_or_create_user(username="Demo", balance=100000.0)
     return _to_user_out(row)
+
+
+@router.get("/search", response_model=list[UserOut])
+def search_users(
+    q: str = Query(..., min_length=1, max_length=64),
+    exclude_user_id: int | None = None,
+    limit: int = Query(10, ge=1, le=50),
+):
+    effective_exclude = int(exclude_user_id or -1)
+    rows = user_repo.search_users(q, exclude_user_id=effective_exclude, limit=limit)
+    return [_to_user_out(row) for row in rows]
 
 
 # ------------------------------

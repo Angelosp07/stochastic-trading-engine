@@ -1,4 +1,5 @@
 import asyncio
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -10,11 +11,11 @@ from app.engine.processes.jump import JumpProcess
 from app.engine.price_engine import PriceEngine
 from app.engine.scheduler import Scheduler
 
-from app.storage.db import *
+from app.storage.db import db
 from app.storage.order_repository import OrderRepository
 from app.storage.user_repository import UserRepository
 from app.storage.price_repository import PriceRepository
-from app.config import *
+from app.config import DB_PATH, clear_tables, seed_assets, seed_users
 
 from app.api.websocket import router
 from app.api.routes.orders import router as orders_router
@@ -22,6 +23,10 @@ from app.api.routes.price import router as price_router
 from app.api.routes.user import router as users_router
 from app.api.routes.positions import router as positions_router
 from app.api.routes.assets import router as assets_router
+from app.api.routes.chat import router as chat_router
+from app.api.routes.contracts import router as contracts_router
+from app.api.routes.shipments import router as shipments_router
+from app.api.routes.freight import router as freight_router
 
 # ------------------------------
 # Initialize FastAPI
@@ -40,13 +45,20 @@ app.include_router(price_router)
 app.include_router(users_router)
 app.include_router(positions_router)
 app.include_router(assets_router)
+app.include_router(chat_router)
+app.include_router(contracts_router)
+app.include_router(shipments_router)
+app.include_router(freight_router)
 
 # ------------------------------
 # Initialize DB for demo
 # ------------------------------
-clear_tables(DB_PATH)
+reset_db_on_startup = os.getenv("APP_RESET_DB_ON_STARTUP", "0").strip().lower() in {"1", "true", "yes", "on"}
+if reset_db_on_startup:
+    clear_tables(DB_PATH)
+
 conn = db.conn
-seed_assets(conn)
+config_map = seed_assets(conn)
 seed_users(conn)
 
 user_repo = UserRepository()
@@ -57,7 +69,6 @@ position_repo = PositionRepository()
 # ------------------------------
 # Initialize stochastic engines (from DB assets)
 # ------------------------------
-config_map = seed_assets(conn)
 
 rows = conn.execute("SELECT id, symbol FROM assets").fetchall()
 
@@ -90,7 +101,7 @@ app.state.engines = engines
 # ------------------------------
 async def run_all_schedulers():
     tasks = []
-    for idx, (symbol, engine) in enumerate(engines.items(), start=1):
+    for idx, (_, engine) in enumerate(engines.items(), start=1):
         scheduler = Scheduler(
             engine=engine,
             asset_id=idx,

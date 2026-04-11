@@ -1,0 +1,131 @@
+from pathlib import Path
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+
+def _register_fonts():
+    try:
+        pdfmetrics.registerFont(TTFont("Inter", "Inter-Regular.ttf"))
+    except Exception:
+        pass
+
+
+def _money(value: float, currency: str) -> str:
+    return f"{currency} {value:,.2f}"
+
+
+def generate_contract_pdf(output_path: Path, payload: dict):
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _register_fonts()
+
+    styles = getSampleStyleSheet()
+    title_style = styles["Heading1"]
+    title_style.fontSize = 18
+    title_style.leading = 22
+    title_style.textColor = colors.HexColor("#1f2a44")
+
+    subtitle_style = styles["BodyText"]
+    subtitle_style.fontSize = 9
+    subtitle_style.textColor = colors.HexColor("#5d6780")
+
+    body_style = styles["BodyText"]
+    body_style.fontSize = 10
+    body_style.leading = 14
+
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+        title=f"Contract {payload['id']}",
+        author="Stochastic Trading Platform",
+    )
+
+    story = []
+    story.append(Paragraph("ELEMENTAL TRADE CONTRACT", title_style))
+    story.append(Paragraph("Stochastic Trading Platform · Official Sample Document", subtitle_style))
+    story.append(Spacer(1, 7 * mm))
+
+    total_notional = float(payload["quantity_kg"]) * float(payload["price_per_kg"])
+    contract_data = [
+        ["Contract ID", f"#{payload['id']}", "Status", str(payload["status"]).upper()],
+        ["Created", payload["created_at"], "Agreed", payload.get("agreed_at") or "Pending"],
+        ["Buyer", payload["buyer_username"], "Seller", payload["seller_username"]],
+        ["Commodity", payload["asset_symbol"], "Purity", f"{float(payload['purity_pct']):.2f}%"],
+        ["Quantity", f"{float(payload['quantity_kg']):,.2f} kg", "Unit Price", _money(float(payload["price_per_kg"]), payload["currency"])],
+        ["Total Notional", _money(total_notional, payload["currency"]), "Delivery Terms", payload.get("delivery_terms") or "-"],
+        ["Origin Port", payload.get("origin_port") or "-", "Destination Port", payload.get("destination_port") or "-"],
+    ]
+
+    contract_table = Table(contract_data, colWidths=[30 * mm, 57 * mm, 30 * mm, 57 * mm])
+    contract_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eef2fb")),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#1d2230")),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c7cfdf")),
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+
+    story.append(contract_table)
+    story.append(Spacer(1, 8 * mm))
+    story.append(
+        Paragraph(
+            "This sample contractual memorandum is generated automatically by the platform. "
+            "It captures the commercial terms agreed by both counterparties and is intended "
+            "for operational routing and audit preview.",
+            body_style,
+        )
+    )
+    story.append(Spacer(1, 12 * mm))
+
+    sign_table = Table(
+        [
+            ["Buyer Authorized Signatory", "Seller Authorized Signatory"],
+            ["", ""],
+            [payload["buyer_username"], payload["seller_username"]],
+            ["Date: ____________________", "Date: ____________________"],
+        ],
+        colWidths=[87 * mm, 87 * mm],
+        rowHeights=[8 * mm, 14 * mm, 7 * mm, 7 * mm],
+    )
+    sign_table.setStyle(
+        TableStyle(
+            [
+                ("LINEABOVE", (0, 1), (0, 1), 0.7, colors.HexColor("#334260")),
+                ("LINEABOVE", (1, 1), (1, 1), 0.7, colors.HexColor("#334260")),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#1d2230")),
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+
+    story.append(sign_table)
+    story.append(Spacer(1, 8 * mm))
+    story.append(
+        Paragraph(
+            "Generated by Stochastic Trading Platform · ELEMENTAL Contract Suite", subtitle_style
+        )
+    )
+
+    doc.build(story)

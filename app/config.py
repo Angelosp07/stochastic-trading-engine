@@ -15,9 +15,21 @@ def hash_password(password: str) -> str:
 
 def seed_assets(conn):
     assets = [
-        ("AAPL", "Apple Inc.", 180.0, 0.0002, 0.004, 0.02, 0.02, 0.002, 0.002),
-        ("GOOGL", "Alphabet Inc.", 140.0, 0.00025, 0.0045, 0.02, 0.02, 0.002, 0.002),
-        ("TSLA", "Tesla Inc.", 220.0, 0.00035, 0.006, 0.03, 0.03, 0.003, 0.003),
+        ("NDOX", "Neodymium Oxide", 92.0, 0.00018, 0.0038, 0.019, 0.019, 0.0018, 0.0018),
+        ("PROX", "Praseodymium Oxide", 87.0, 0.0002, 0.0041, 0.02, 0.02, 0.002, 0.002),
+        ("DYOX", "Dysprosium Oxide", 365.0, 0.00028, 0.0052, 0.024, 0.024, 0.0026, 0.0026),
+        ("LI2CO3", "Lithium Carbonate", 17.5, 0.00024, 0.0062, 0.028, 0.028, 0.0032, 0.0032),
+        ("COBM", "Cobalt Metal", 34.0, 0.00022, 0.0057, 0.026, 0.026, 0.003, 0.003),
+        ("NIBQ", "Nickel Briquette", 19.0, 0.0002, 0.0051, 0.024, 0.024, 0.0028, 0.0028),
+        ("MNSO4", "Manganese Sulfate", 1.8, 0.00019, 0.0046, 0.022, 0.022, 0.0023, 0.0023),
+        ("GRPH", "Graphite Flake", 6.4, 0.00017, 0.0042, 0.021, 0.021, 0.0021, 0.0021),
+        ("CUCA", "Copper Cathode", 4.3, 0.00016, 0.0039, 0.019, 0.019, 0.0019, 0.0019),
+        ("AL99", "Aluminum 99.7%", 2.4, 0.00015, 0.0036, 0.018, 0.018, 0.0018, 0.0018),
+        ("SN99", "Tin 99.9%", 32.0, 0.00021, 0.0048, 0.023, 0.023, 0.0025, 0.0025),
+        ("TANT", "Tantalum Concentrate", 158.0, 0.00026, 0.0056, 0.027, 0.027, 0.0031, 0.0031),
+        ("GALL", "Gallium 99.99%", 302.0, 0.00029, 0.0061, 0.029, 0.029, 0.0033, 0.0033),
+        ("GERM", "Germanium Metal", 1480.0, 0.00031, 0.0065, 0.031, 0.031, 0.0035, 0.0035),
+        ("SIMG", "Silicon Metal", 2.2, 0.00018, 0.0044, 0.021, 0.021, 0.0022, 0.0022),
     ]
 
     conn.executemany("""
@@ -82,8 +94,26 @@ def clear_tables(db_path: str = "app.db"):
     Delete all rows from demo tables for a clean start.
     """
     conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
     cursor = conn.cursor()
-    tables = ["fills", "user_alerts", "orders", "price_history", "positions", "user_watchlist", "assets", "users"]  # add any other demo tables
+    tables = [
+        "shipment_events",
+        "shipments",
+        "contract_events",
+        "contracts",
+        "fills",
+        "chat_messages",
+        "user_alerts",
+        "orders",
+        "price_history",
+        "positions",
+        "user_watchlist",
+        "vessels",
+        "freight_rates",
+        "ports",
+        "assets",
+        "users",
+    ]
     for table in tables:
         cursor.execute(f"DELETE FROM {table};")
         cursor.execute(f"DELETE FROM sqlite_sequence WHERE name='{table}';")  # reset AUTOINCREMENT
